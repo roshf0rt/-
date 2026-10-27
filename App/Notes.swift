@@ -119,9 +119,11 @@ struct NoteEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var note: LessonNote
     private let isNew: Bool
+    private let schedule: [Lesson]
 
-    init(lesson: Lesson, store: NotesStore) {
+    init(lesson: Lesson, schedule: [Lesson], store: NotesStore) {
         self.store = store
+        self.schedule = schedule
         let existing = store.note(for: lesson)
         isNew = existing == nil
         _note = State(initialValue: existing ?? LessonNote(lesson: lesson, text: "", isHomework: false,
@@ -155,6 +157,12 @@ struct NoteEditor: View {
                             Text(reminder.title).tag(reminder)
                         }
                     }
+                } footer: {
+                    if let target = homeworkTarget {
+                        Text("Пара уже началась, поэтому ДЗ запишется на следующее занятие: \(RU.shortDay(target.startsAt).lowercased(with: RU.locale)) в \(RU.time(target.startsAt)), каб. \(target.roomTitle).")
+                    } else if note.isHomework && note.lesson.startsAt <= Date() {
+                        Text("Следующего занятия по этому предмету в ближайшие две недели нет, ДЗ останется у этой пары.")
+                    }
                 }
 
                 if !isNew {
@@ -172,13 +180,37 @@ struct NoteEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Сохранить") {
-                        store.save(note)
+                        save()
                         dismiss()
                     }
                 }
             }
         }
         .environment(\.locale, RU.locale)
+    }
+
+    /// Homework given at a pair that has already started is due at the next pair
+    /// of the same subject.
+    private var homeworkTarget: Lesson? {
+        guard note.isHomework, note.lesson.startsAt <= Date() else { return nil }
+        return schedule.first {
+            $0.subject == note.lesson.subject && $0.startsAt > note.lesson.startsAt && $0.id != note.lesson.id
+        }
+    }
+
+    private func save() {
+        guard let target = homeworkTarget else {
+            store.save(note)
+            return
+        }
+        var moved = note
+        moved.lesson = target
+        // Keep homework already written for that pair.
+        if let existing = store.note(for: target), !existing.text.isEmpty {
+            moved.text = existing.text + "\n" + note.text
+        }
+        if !isNew { store.delete(note) }
+        store.save(moved)
     }
 }
 

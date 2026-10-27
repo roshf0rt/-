@@ -209,7 +209,7 @@ private struct ScheduleList: View {
             }
             .refreshable { await model.refresh() }
             .sheet(item: $editing) { lesson in
-                NoteEditor(lesson: lesson, store: notes)
+                NoteEditor(lesson: lesson, schedule: model.lessons, store: notes)
             }
         }
     }
