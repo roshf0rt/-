@@ -335,7 +335,7 @@ struct WidgetMessage: View {
 
     private var text: String {
         switch entry.status {
-        case .noGroup: return "Зажмите виджет → «Изменить виджет» и выберите группу"
+        case .noGroup: return "Не удалось найти группу. Проверьте интернет — виджет попробует снова"
         case .noData: return "Нет данных. Проверьте интернет или откройте приложение"
         case .ready: return "Ближайших пар нет"
         }

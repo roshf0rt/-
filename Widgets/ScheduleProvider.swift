@@ -19,30 +19,37 @@ struct ScheduleEntry: TimelineEntry {
     }
 }
 
-struct ScheduleProvider: AppIntentTimelineProvider {
-    private let staleAfter: TimeInterval = 60 * 60
+/// A static provider: configurable (App Intents) widgets stay blank when the IPA is
+/// re-signed without App Groups, while static ones render.
+struct ScheduleProvider: TimelineProvider {
+    private static let staleAfter: TimeInterval = 60 * 60
 
     func placeholder(in context: Context) -> ScheduleEntry { .preview }
 
-    func snapshot(for configuration: ScheduleConfigurationIntent, in context: Context) async -> ScheduleEntry {
-        if context.isPreview { return .preview }
-        return await entries(for: configuration, now: Date(), allowNetwork: false).first ?? .preview
+    func getSnapshot(in context: Context, completion: @escaping (ScheduleEntry) -> Void) {
+        if context.isPreview {
+            completion(.preview)
+            return
+        }
+        Task {
+            completion(await Self.entries(now: Date(), allowNetwork: false).first ?? .preview)
+        }
     }
 
-    func timeline(for configuration: ScheduleConfigurationIntent, in context: Context) async -> Timeline<ScheduleEntry> {
-        let now = Date()
-        let entries = await entries(for: configuration, now: now, allowNetwork: true)
-        let hasData = entries.first?.status == .ready
-        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(hasData ? staleAfter : 15 * 60)))
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ScheduleEntry>) -> Void) {
+        Task {
+            let now = Date()
+            let entries = await Self.entries(now: now, allowNetwork: true)
+            let hasData = entries.first?.status == .ready
+            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(hasData ? Self.staleAfter : 15 * 60))))
+        }
     }
 
-    private func entries(for configuration: ScheduleConfigurationIntent, now: Date, allowNetwork: Bool) async -> [ScheduleEntry] {
-        guard let group = configuration.group?.group ?? ScheduleStore.loadGroup() else {
-            if allowNetwork { WidgetLog.add("нет группы: ни в виджете, ни в приложении") }
+    private static func entries(now: Date, allowNetwork: Bool) async -> [ScheduleEntry] {
+        guard let group = await resolveGroup(allowNetwork: allowNetwork) else {
             return [ScheduleEntry(date: now, status: .noGroup, groupName: "", lessons: [])]
         }
 
-        // The widget fetches by itself, so it works even when the App Group is not shared.
         var snapshot = ScheduleStore.snapshot(for: group.id)
         if allowNetwork, snapshot.map({ now.timeIntervalSince($0.updatedAt) > staleAfter }) ?? true {
             WidgetLog.add("\(group.name): загрузка (кэш \(snapshot == nil ? "пуст" : "устарел"))")
@@ -61,7 +68,8 @@ struct ScheduleProvider: AppIntentTimelineProvider {
             return [ScheduleEntry(date: now, status: .noData, groupName: group.name, lessons: [])]
         }
 
-        let lessons = snapshot.lessons.visible(forSubgroup: configuration.subgroup.resolved)
+        let subgroup = AppGroup.isShared ? ScheduleStore.subgroup : WidgetDefaults.subgroup
+        let lessons = snapshot.lessons.visible(forSubgroup: subgroup)
         // Redraw at every start and end of a pair, and at midnight for the day view.
         let calendar = Calendar.current
         let horizon = now.addingTimeInterval(24 * 60 * 60)
@@ -74,9 +82,28 @@ struct ScheduleProvider: AppIntentTimelineProvider {
         if let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) {
             dates.insert(midnight)
         }
-        if allowNetwork { WidgetLog.add("\(group.name): показано, пар после фильтра \(lessons.count)") }
         return dates.sorted().map {
             ScheduleEntry(date: $0, status: .ready, groupName: group.name, lessons: lessons)
+        }
+    }
+
+    /// The app's group when the App Group is shared; otherwise the build-time default,
+    /// looked up once on the site and then cached in the widget's own storage.
+    private static func resolveGroup(allowNetwork: Bool) async -> ScheduleGroup? {
+        if let group = ScheduleStore.loadGroup() { return group }
+        guard allowNetwork else { return nil }
+        let name = WidgetDefaults.groupName
+        do {
+            let found = try await withDeadline(6) { try await ScheduleAPI(timeout: 5).searchGroups(query: name) }
+            guard let group = found.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) ?? found.first else {
+                WidgetLog.add("группа \(name) не найдена")
+                return nil
+            }
+            ScheduleStore.saveGroup(group)
+            return group
+        } catch {
+            WidgetLog.add("поиск группы \(name): ошибка — \(error.localizedDescription)")
+            return nil
         }
     }
 }
@@ -90,7 +117,7 @@ extension ScheduleEntry {
                    room: room, address: "Ленина, 51", teacher: "Поспелова Т.Х.",
                    subgroup: subgroup, isTimeUnspecified: false)
         }
-        return ScheduleEntry(date: now, status: .ready, groupName: "УГИ-433510", lessons: [
+        return ScheduleEntry(date: now, status: .ready, groupName: WidgetDefaults.groupName, lessons: [
             lesson("Бренд-менеджмент", "практические занятия", room: "339", startsIn: -30 * 60),
             lesson("Событийный маркетинг", "лекции", room: "425", startsIn: 70 * 60),
             lesson("Корпоративный PR", "лекции", room: "339", startsIn: 170 * 60, subgroup: 1)

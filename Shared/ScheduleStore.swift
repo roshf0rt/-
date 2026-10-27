@@ -12,9 +12,12 @@ enum AppGroup {
         return groups.first { $0.localizedCaseInsensitiveContains("urfu") } ?? groups.first ?? configuredID
     }()
 
+    /// Есть ли у приложения и виджета общая папка. Без профиля с App Group её нет.
+    static let isShared = !provisionedGroups().isEmpty
+
     /// Откуда взят идентификатор — для экрана диагностики.
     static var source: String {
-        provisionedGroups().isEmpty ? "из кода (в профиле подписи групп нет)" : "из профиля подписи"
+        isShared ? "из профиля подписи" : "из кода (в профиле подписи групп нет)"
     }
 
     static var defaults: UserDefaults {
