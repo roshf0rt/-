@@ -140,7 +140,10 @@ struct ScheduleProvider: TimelineProvider {
         if AppGroup.isShared, let group = ScheduleStore.loadGroup() {
             return (group, ScheduleStore.subgroup)
         }
-        guard let group = await defaultGroup(allowNetwork: allowNetwork) else { return nil }
+        // With a working link the app decides; the build-time group is only for installs
+        // where the app cannot reach the widget at all.
+        guard Entitlements.sharedAppGroup == nil, Entitlements.sharedKeychainGroup == nil,
+              let group = await defaultGroup(allowNetwork: allowNetwork) else { return nil }
         return (group, WidgetDefaults.subgroup)
     }
 
