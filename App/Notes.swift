@@ -118,16 +118,24 @@ struct NoteEditor: View {
     @ObservedObject var store: NotesStore
     @Environment(\.dismiss) private var dismiss
     @State private var note: LessonNote
+    /// Занятие, к которому относится ДЗ.
+    @State private var targetID: String
     private let isNew: Bool
-    private let schedule: [Lesson]
+    /// Эта пара, если она ещё не началась, и следующие занятия по тому же предмету.
+    private let candidates: [Lesson]
 
     init(lesson: Lesson, schedule: [Lesson], store: NotesStore) {
         self.store = store
-        self.schedule = schedule
         let existing = store.note(for: lesson)
         isNew = existing == nil
         _note = State(initialValue: existing ?? LessonNote(lesson: lesson, text: "", isHomework: false,
                                                            isDone: false, reminder: .none))
+        let later = schedule.filter {
+            $0.subject == lesson.subject && $0.startsAt > lesson.startsAt && $0.id != lesson.id
+        }
+        candidates = (lesson.startsAt > Date() ? [lesson] : []) + later.prefix(6)
+        // Homework given at a pair that has already started is due next time by default.
+        _targetID = State(initialValue: candidates.first?.id ?? lesson.id)
     }
 
     var body: some View {
@@ -150,6 +158,13 @@ struct NoteEditor: View {
                 Section {
                     Toggle("Домашнее задание", isOn: $note.isHomework)
                     if note.isHomework {
+                        if !candidates.isEmpty {
+                            Picker("К занятию", selection: $targetID) {
+                                ForEach(candidates) { lesson in
+                                    Text(candidateTitle(lesson)).tag(lesson.id)
+                                }
+                            }
+                        }
                         Toggle("Выполнено", isOn: $note.isDone)
                     }
                     Picker("Напомнить", selection: $note.reminder) {
@@ -158,10 +173,10 @@ struct NoteEditor: View {
                         }
                     }
                 } footer: {
-                    if let target = homeworkTarget {
-                        Text("Пара уже началась, поэтому ДЗ запишется на следующее занятие: \(RU.shortDay(target.startsAt).lowercased(with: RU.locale)) в \(RU.time(target.startsAt)), каб. \(target.roomTitle).")
-                    } else if note.isHomework && note.lesson.startsAt <= Date() {
+                    if note.isHomework && candidates.isEmpty {
                         Text("Следующего занятия по этому предмету в ближайшие две недели нет, ДЗ останется у этой пары.")
+                    } else if note.isHomework {
+                        Text("ДЗ появится у выбранного занятия, и напоминание сработает относительно него.")
                     }
                 }
 
@@ -189,17 +204,15 @@ struct NoteEditor: View {
         .environment(\.locale, RU.locale)
     }
 
-    /// Homework given at a pair that has already started is due at the next pair
-    /// of the same subject.
-    private var homeworkTarget: Lesson? {
-        guard note.isHomework, note.lesson.startsAt <= Date() else { return nil }
-        return schedule.first {
-            $0.subject == note.lesson.subject && $0.startsAt > note.lesson.startsAt && $0.id != note.lesson.id
-        }
+    private func candidateTitle(_ lesson: Lesson) -> String {
+        let label = lesson.id == note.lesson.id ? "эта пара" : RU.shortDay(lesson.startsAt)
+        return "\(label), \(RU.time(lesson.startsAt)) · \(lesson.lessonKind.title.lowercased(with: RU.locale))"
     }
 
     private func save() {
-        guard let target = homeworkTarget else {
+        guard note.isHomework,
+              let target = candidates.first(where: { $0.id == targetID }),
+              target.id != note.lesson.id else {
             store.save(note)
             return
         }
