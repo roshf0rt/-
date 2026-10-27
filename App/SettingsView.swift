@@ -42,6 +42,30 @@ struct SettingsView: View {
                     }
                     LabeledContent("App Group", value: AppGroup.id)
                         .font(.footnote)
+                    Text("Группа взята \(AppGroup.source)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    let log = WidgetLog.entries()
+                    if log.isEmpty {
+                        Text("Записей нет. Значит, виджет ещё не запускался или не видит общие данные приложения.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(log.reversed().enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                    }
+                } header: {
+                    Text("Журнал виджета")
+                } footer: {
+                    if !WidgetLog.entries().isEmpty {
+                        ShareLink("Поделиться журналом", item: WidgetLog.entries().joined(separator: "\n"))
+                    }
                 }
             }
             .navigationTitle("Настройки")

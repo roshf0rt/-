@@ -38,16 +38,24 @@ struct ScheduleProvider: AppIntentTimelineProvider {
 
     private func entries(for configuration: ScheduleConfigurationIntent, now: Date, allowNetwork: Bool) async -> [ScheduleEntry] {
         guard let group = configuration.group?.group ?? ScheduleStore.loadGroup() else {
+            if allowNetwork { WidgetLog.add("нет группы: ни в виджете, ни в приложении") }
             return [ScheduleEntry(date: now, status: .noGroup, groupName: "", lessons: [])]
         }
 
         // The widget fetches by itself, so it works even when the App Group is not shared.
         var snapshot = ScheduleStore.snapshot(for: group.id)
-        if allowNetwork, snapshot.map({ now.timeIntervalSince($0.updatedAt) > staleAfter }) ?? true,
-           let lessons = try? await ScheduleAPI().fetchSchedule(for: group) {
-            let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: now)
-            ScheduleStore.save(fresh)
-            snapshot = fresh
+        if allowNetwork, snapshot.map({ now.timeIntervalSince($0.updatedAt) > staleAfter }) ?? true {
+            WidgetLog.add("\(group.name): загрузка (кэш \(snapshot == nil ? "пуст" : "устарел"))")
+            do {
+                // Widgets get only a few seconds; a slow site must not leave a blank placeholder.
+                let lessons = try await withDeadline(8) { try await ScheduleAPI(timeout: 7).fetchSchedule(for: group) }
+                let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: now)
+                ScheduleStore.save(fresh)
+                snapshot = fresh
+                WidgetLog.add("\(group.name): загружено пар \(lessons.count)")
+            } catch {
+                WidgetLog.add("\(group.name): ошибка — \(error.localizedDescription)")
+            }
         }
         guard let snapshot else {
             return [ScheduleEntry(date: now, status: .noData, groupName: group.name, lessons: [])]
@@ -66,6 +74,7 @@ struct ScheduleProvider: AppIntentTimelineProvider {
         if let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) {
             dates.insert(midnight)
         }
+        if allowNetwork { WidgetLog.add("\(group.name): показано, пар после фильтра \(lessons.count)") }
         return dates.sorted().map {
             ScheduleEntry(date: $0, status: .ready, groupName: group.name, lessons: lessons)
         }

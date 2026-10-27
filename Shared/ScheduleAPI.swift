@@ -4,6 +4,11 @@ import Foundation
 struct ScheduleAPI {
     private let baseURL = URL(string: "https://urfu.ru/api/v2/schedule/groups/")!
     private let timeZone = TimeZone(identifier: "Asia/Yekaterinburg")!
+    private let timeout: TimeInterval
+
+    init(timeout: TimeInterval = 30) {
+        self.timeout = timeout
+    }
 
     func searchGroups(query: String) async throws -> [ScheduleGroup] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -155,7 +160,7 @@ struct ScheduleAPI {
 
     private func request(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url)
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw ScheduleError.unexpectedResponse }

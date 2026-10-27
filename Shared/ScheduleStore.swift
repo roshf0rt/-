@@ -12,6 +12,11 @@ enum AppGroup {
         return groups.first { $0.localizedCaseInsensitiveContains("urfu") } ?? groups.first ?? configuredID
     }()
 
+    /// Откуда взят идентификатор — для экрана диагностики.
+    static var source: String {
+        provisionedGroups().isEmpty ? "из кода (в профиле подписи групп нет)" : "из профиля подписи"
+    }
+
     static var defaults: UserDefaults {
         UserDefaults(suiteName: id) ?? .standard
     }
