@@ -4,6 +4,7 @@ import WidgetKit
 // MARK: - Ближайшая пара
 
 struct NextLessonView: View {
+    @Environment(\.hurry) private var hurry
     @Environment(\.widgetFamily) private var family
     let entry: ScheduleEntry
 
@@ -11,6 +12,7 @@ struct NextLessonView: View {
         content
             .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
+            .environment(\.hurry, entry.hurry)
     }
 
     @ViewBuilder private var content: some View {
@@ -56,7 +58,7 @@ struct NextLessonView: View {
                     .foregroundStyle(.secondary)
                 Text(lesson.roomTitle)
                     .font(.system(size: 42, weight: .heavy, design: .rounded))
-                    .foregroundStyle(lesson.accent(at: entry.date))
+                    .foregroundStyle(hurry.accent(lesson, at: entry.date))
                     .lineLimit(1)
                     .minimumScaleFactor(0.4)
                 Text(lesson.shortAddress)
@@ -99,6 +101,7 @@ struct NextLessonView: View {
 // MARK: - Кабинет
 
 struct RoomView: View {
+    @Environment(\.hurry) private var hurry
     @Environment(\.widgetFamily) private var family
     let entry: ScheduleEntry
 
@@ -106,6 +109,7 @@ struct RoomView: View {
         content
             .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
+            .environment(\.hurry, entry.hurry)
     }
 
     @ViewBuilder private var content: some View {
@@ -131,7 +135,7 @@ struct RoomView: View {
                     Spacer(minLength: 0)
                     Text(lesson.roomTitle)
                         .font(.system(size: 58, weight: .heavy, design: .rounded))
-                        .foregroundStyle(lesson.accent(at: entry.date))
+                        .foregroundStyle(hurry.accent(lesson, at: entry.date))
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
                     if !lesson.shortAddress.isEmpty {
@@ -194,6 +198,7 @@ private struct RoomGauge: View {
 // MARK: - Пары на день
 
 struct DayView: View {
+    @Environment(\.hurry) private var hurry
     @Environment(\.widgetFamily) private var family
     let entry: ScheduleEntry
 
@@ -203,6 +208,7 @@ struct DayView: View {
         content
             .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
+            .environment(\.hurry, entry.hurry)
     }
 
     @ViewBuilder private var content: some View {
@@ -226,7 +232,7 @@ struct DayView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(RU.shortDay(agenda.day, now: entry.date))
                             .font(.headline)
-                        if let soon = entry.focus, soon.isSoon(at: entry.date) {
+                        if let soon = entry.focus, hurry.isSoon(soon, at: entry.date) {
                             Text("пора идти")
                                 .font(.caption.weight(.heavy))
                                 .foregroundStyle(.red)
@@ -257,11 +263,11 @@ struct DayView: View {
 extension DayView {
     /// Большой виджет: ближайшие пары на несколько дней вперёд.
     fileprivate var week: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Расписание")
                     .font(.headline)
-                if let soon = entry.focus, soon.isSoon(at: entry.date) {
+                if let soon = entry.focus, hurry.isSoon(soon, at: entry.date) {
                     Text("пора идти")
                         .font(.caption.weight(.heavy))
                         .foregroundStyle(.red)
@@ -275,9 +281,9 @@ extension DayView {
                 Text(RU.shortDay(day.day, now: entry.date).uppercased(with: RU.locale))
                     .font(.caption2.weight(.heavy))
                     .foregroundStyle(.secondary)
-                    .padding(.top, 3)
+                    .padding(.top, 2)
                 ForEach(day.lessons) { lesson in
-                    DayRow(lesson: lesson, date: entry.date)
+                    DayRow(lesson: lesson, date: entry.date, compact: true)
                 }
             }
             Spacer(minLength: 0)
@@ -287,17 +293,20 @@ extension DayView {
 }
 
 private struct DayRow: View {
+    @Environment(\.hurry) private var hurry
     let lesson: Lesson
     let date: Date
+    /// Плотнее — для большого виджета на несколько дней.
+    var compact = false
 
     var body: some View {
         let kind = lesson.lessonKind
-        let accent = lesson.accent(at: date)
-        let highlighted = lesson.isOngoing(at: date) || lesson.isSoon(at: date)
+        let accent = hurry.accent(lesson, at: date)
+        let highlighted = lesson.isOngoing(at: date) || hurry.isSoon(lesson, at: date)
         HStack(spacing: 8) {
             Capsule()
                 .fill(accent)
-                .frame(width: 3, height: 26)
+                .frame(width: 3, height: compact ? 22 : 26)
             VStack(alignment: .leading, spacing: 0) {
                 Text(lesson.isTimeUnspecified ? "—" : RU.time(lesson.startsAt))
                     .font(.caption.weight(.bold))
@@ -313,7 +322,7 @@ private struct DayRow: View {
             .frame(width: 46, alignment: .leading)
             VStack(alignment: .leading, spacing: 0) {
                 Text(lesson.subject)
-                    .font(.subheadline.weight(.semibold))
+                    .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text(lesson.subgroup.map { "\(kind.title) · \($0) подгр." } ?? kind.title)
                     .font(.caption2)
@@ -322,12 +331,12 @@ private struct DayRow: View {
             }
             Spacer(minLength: 4)
             Text(lesson.roomTitle)
-                .font(.system(.title3, design: .rounded, weight: .heavy))
+                .font(.system(compact ? .headline : .title3, design: .rounded, weight: .heavy))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.vertical, compact ? 1 : 3)
         .background(highlighted ? accent.opacity(0.22) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -337,12 +346,13 @@ private struct DayRow: View {
 
 /// Прямоугольный виджет экрана блокировки: что за пара и сколько осталось.
 private struct LockScreenLesson: View {
+    @Environment(\.hurry) private var hurry
     let lesson: Lesson
     let date: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("\(StatusLine.title(for: lesson, at: date)) · каб. \(lesson.roomTitle)")
+            Text("\(StatusLine.title(for: lesson, at: date, hurry: hurry)) · каб. \(lesson.roomTitle)")
                 .font(.caption2.weight(.semibold))
                 .widgetAccentable()
             Text(lesson.subject)
@@ -356,6 +366,7 @@ private struct LockScreenLesson: View {
 
 /// Время пары, а во время неё — живая полоса прогресса; перед парой — живой отсчёт.
 private struct LockScreenTiming: View {
+    @Environment(\.hurry) private var hurry
     let lesson: Lesson
     let date: Date
 
@@ -368,7 +379,7 @@ private struct LockScreenTiming: View {
             }
             .progressViewStyle(.linear)
             .widgetAccentable()
-        } else if lesson.isSoon(at: date) {
+        } else if hurry.isSoon(lesson, at: date) {
             HStack(spacing: 3) {
                 Text("через")
                 Text(timerInterval: date...lesson.startsAt, countsDown: true)
@@ -385,25 +396,27 @@ private struct LockScreenTiming: View {
 // MARK: - Общие элементы
 
 struct StatusLine: View {
+    @Environment(\.hurry) private var hurry
     let lesson: Lesson
     let date: Date
     /// Без отсчёта справа — для маленьких виджетов, где он не помещается.
     var compact = false
 
-    static func title(for lesson: Lesson, at date: Date) -> String {
+    static func title(for lesson: Lesson, at date: Date, hurry: HurryInfo) -> String {
         if lesson.isOngoing(at: date) { return "СЕЙЧАС" }
-        if lesson.isSoon(at: date) { return "ПОРА ИДТИ" }
+        if hurry.isSoon(lesson, at: date) { return hurry.distance(to: lesson) == nil ? "ПОРА ИДТИ" : "ВЫХОДИ" }
+        if hurry.isSettled(lesson, at: date) { return "ТЫ НА МЕСТЕ" }
         if Calendar.current.isDate(lesson.startsAt, inSameDayAs: date) { return "ДАЛЕЕ" }
         return RU.shortDay(lesson.startsAt, now: date).uppercased(with: RU.locale)
     }
 
     var body: some View {
-        let color = lesson.accent(at: date)
+        let color = hurry.statusColor(lesson, at: date)
         HStack(spacing: 5) {
             Circle()
                 .fill(color)
                 .frame(width: 7, height: 7)
-            Text(Self.title(for: lesson, at: date))
+            Text(Self.title(for: lesson, at: date, hurry: hurry))
                 .font(.caption2.weight(.heavy))
                 .foregroundStyle(color)
                 .lineLimit(1)
@@ -418,7 +431,7 @@ struct StatusLine: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 58, alignment: .trailing)
                     .foregroundStyle(.secondary)
-            } else if lesson.isSoon(at: date) {
+            } else if hurry.isSoon(lesson, at: date) {
                 Text(timerInterval: date...lesson.startsAt, countsDown: true)
                     .font(.caption.weight(.heavy))
                     .monospacedDigit()
@@ -432,6 +445,7 @@ struct StatusLine: View {
 
 /// Время пары для маленьких виджетов: живой отсчёт до конца или до начала, иначе время.
 struct TimingLine: View {
+    @Environment(\.hurry) private var hurry
     let lesson: Lesson
     let date: Date
 
@@ -444,14 +458,19 @@ struct TimingLine: View {
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-        } else if lesson.isSoon(at: date) {
+        } else if hurry.isSoon(lesson, at: date) {
             HStack(spacing: 3) {
                 Text("через")
                 Text(timerInterval: date...lesson.startsAt, countsDown: true)
                     .monospacedDigit()
+                if let distance = hurry.distanceText(for: lesson) {
+                    Text("· \(distance)")
+                }
             }
             .font(.caption.weight(.heavy))
             .foregroundStyle(.red)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
         } else {
             Text(RU.timeRange(lesson))
                 .font(.caption.weight(.semibold))
@@ -525,8 +544,8 @@ struct WidgetBackdrop: View {
 
     var body: some View {
         let lesson = entry.status == .ready ? entry.focus : nil
-        let soon = lesson?.isSoon(at: entry.date) ?? false
-        let color = lesson?.accent(at: entry.date) ?? .blue
+        let soon = lesson.map { entry.hurry.isSoon($0, at: entry.date) } ?? false
+        let color = lesson.map { entry.hurry.accent($0, at: entry.date) } ?? .blue
         ZStack {
             Color(uiColor: .systemBackground)
             LinearGradient(colors: [color.opacity(soon ? 0.75 : 0.3), color.opacity(soon ? 0.35 : 0.04)],

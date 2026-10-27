@@ -30,6 +30,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Виджет показывает, сколько ехать до корпуса пары, и краснеет заранее, если вы далеко."
     dependencies:
       - target: ScheduleWidget
         embed: true
@@ -51,6 +52,7 @@ targets:
         CFBundleDevelopmentRegion: ru
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSWidgetWantsLocation: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

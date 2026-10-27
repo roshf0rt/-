@@ -8,6 +8,8 @@ struct ScheduleEntry: TimelineEntry {
     let groupName: String
     /// Уже отфильтрованы по подгруппе и отсортированы.
     let lessons: [Lesson]
+    /// Насколько далеко корпуса — по геолокации, если она разрешена.
+    var hurry = HurryInfo()
 
     var focus: Lesson? { lessons.focus(at: date) }
     var agenda: (day: Date, lessons: [Lesson])? { lessons.agenda(at: date) }
@@ -44,7 +46,12 @@ struct ScheduleProvider: TimelineProvider {
             let entries = await Self.entries(now: now, allowNetwork: true)
             let hasData = entries.first?.status == .ready
             // Reload before the ring entries run out, at the latest after the cache goes stale.
-            let reload = hasData ? min(Self.staleAfter, Self.ringHorizon) : 15 * 60
+            // With location on, refresh often before a pair so the distance stays current.
+            let pairSoon = entries.first.map { entry in
+                entry.lessons.contains { $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 2 * 60 * 60 }
+            } ?? false
+            let tracking = !(entries.first?.hurry.distances.isEmpty ?? true)
+            let reload = !hasData ? 15 * 60 : (tracking && pairSoon ? 15 * 60 : min(Self.staleAfter, Self.ringHorizon))
             completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(reload))))
         }
     }
@@ -76,6 +83,7 @@ struct ScheduleProvider: TimelineProvider {
         }
 
         let lessons = snapshot.lessons.visible(forSubgroup: subgroup)
+        let hurry = allowNetwork ? await travelInfo(for: lessons, now: now) : HurryInfo()
         // Redraw at every start and end of a pair, when it is time to go, and at midnight
         // for the day view. During a pair, every 2 minutes so the ring shrinks; that is
         // limited to the next hours, after which the timeline is reloaded.
@@ -83,8 +91,9 @@ struct ScheduleProvider: TimelineProvider {
         let horizon = now.addingTimeInterval(24 * 60 * 60)
         var dates: Set<Date> = [now]
         for lesson in lessons where !lesson.isTimeUnspecified {
-            let hurry = lesson.startsAt.addingTimeInterval(-TimeInterval(Hurry.minutes * 60))
-            for date in [hurry, lesson.startsAt, lesson.endsAt] where date > now && date < horizon {
+            let leave = lesson.startsAt.addingTimeInterval(-hurry.lead(for: lesson))
+            let settle = lesson.startsAt.addingTimeInterval(-30 * 60)
+            for date in [leave, settle, lesson.startsAt, lesson.endsAt] where date > now && date < horizon {
                 dates.insert(date)
             }
             var tick = max(lesson.startsAt, now).addingTimeInterval(ringStep)
@@ -97,8 +106,29 @@ struct ScheduleProvider: TimelineProvider {
             dates.insert(midnight)
         }
         return dates.sorted().map {
-            ScheduleEntry(date: $0, status: .ready, groupName: group.name, lessons: lessons)
+            ScheduleEntry(date: $0, status: .ready, groupName: group.name, lessons: lessons, hurry: hurry)
         }
+    }
+
+    /// Distances from where you are to the buildings of the next day's pairs.
+    private static func travelInfo(for lessons: [Lesson], now: Date) async -> HurryInfo {
+        let addresses = Set(lessons
+            .filter { !$0.isTimeUnspecified && $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 24 * 60 * 60 }
+            .map(\.shortAddress)
+            .filter { !$0.isEmpty })
+        guard !addresses.isEmpty else { return HurryInfo() }
+        let locator = await MainActor.run { WidgetLocator() }
+        guard let here = (try? await withDeadline(5) { await locator.current() }) ?? nil else {
+            return HurryInfo()
+        }
+        var info = HurryInfo()
+        for address in addresses.prefix(4) {
+            if let building = await CampusGeocoder.coordinate(for: address) {
+                info.distances[address] = here.location.distance(from: building.location)
+            }
+        }
+        WidgetLog.add("геолокация: \(info.distances.map { "\($0.key) \(Int($0.value)) м" }.joined(separator: ", "))")
+        return info
     }
 
     /// Where the group comes from, in order: the shared App Group, the keychain (the app
