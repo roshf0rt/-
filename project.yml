@@ -1,53 +1,51 @@
-name: UrfuSchedule
+name: UrFUSchedule
 options:
-  bundleIdPrefix: ru.urfu
+  bundleIdPrefix: ru.example
   deploymentTarget:
     iOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""
-
 targets:
-  UrfuSchedule:
+  UrFUSchedule:
     type: application
     platform: iOS
     sources:
       - App
       - Shared
     entitlements:
-      path: App/UrfuSchedule.entitlements
+      path: App/UrFUSchedule.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.ru.urfu.schedule
-    info:
-      path: App/Info.plist
-      properties:
-        CFBundleDisplayName: Расписание УрФУ
-        UILaunchScreen: {}
+          - group.ru.example.urfu.schedule
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.urfu.schedule
+        PRODUCT_BUNDLE_IDENTIFIER: ru.example.UrFUSchedule
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Расписание УрФУ
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     dependencies:
-      - target: UrfuScheduleWidget
-
-  UrfuScheduleWidget:
+      - target: ScheduleWidget
+        embed: true
+  ScheduleWidget:
     type: app-extension
     platform: iOS
     sources:
-      - Widget
+      - Widgets
       - Shared
     entitlements:
-      path: Widget/UrfuScheduleWidget.entitlements
+      path: Widgets/ScheduleWidget.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.ru.urfu.schedule
+          - group.ru.example.urfu.schedule
     info:
-      path: Widget/Info.plist
+      path: Widgets/Info.plist
       properties:
-        CFBundleDisplayName: Расписание
+        CFBundleDisplayName: Расписание УрФУ
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.urfu.schedule.widget
+        PRODUCT_BUNDLE_IDENTIFIER: ru.example.UrFUSchedule.ScheduleWidget
+        SKIP_INSTALL: YES

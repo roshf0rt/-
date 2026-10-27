@@ -1,142 +1,167 @@
 import SwiftUI
 import WidgetKit
 
-struct ContentView: View {
-    private let store = ScheduleStore()
+@MainActor
+final class ScheduleViewModel: ObservableObject {
+    @Published var group = ScheduleStore.loadGroup()
+    @Published var snapshot = ScheduleStore.load()
+    @Published var loading = false
+    @Published var error: String?
+    private let api = ScheduleAPI()
+    private var refreshID = UUID()
 
-    @State private var weekly = ScheduleStore().load()
-    @State private var isAdding = false
+    func select(_ group: ScheduleGroup) async {
+        self.group = group
+        ScheduleStore.saveGroup(group)
+        // Avoid showing the previous group's classes under the new group name.
+        snapshot = ScheduleSnapshot(groupName: group.name, lessons: [], updatedAt: nil)
+        ScheduleStore.save(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
+        await refresh()
+    }
+
+    func refresh() async {
+        guard let group else { return }
+        let requestID = UUID()
+        refreshID = requestID
+        loading = true
+        error = nil
+        defer { if refreshID == requestID { loading = false } }
+        do {
+            let lessons = try await api.fetchSchedule(for: group).sorted { $0.startsAt < $1.startsAt }
+            // Ignore a response if the user selected another group in the meantime.
+            guard self.group == group, refreshID == requestID else { return }
+            snapshot = ScheduleSnapshot(groupName: group.name, lessons: lessons, updatedAt: Date())
+            ScheduleStore.save(snapshot)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            guard refreshID == requestID else { return }
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var model = ScheduleViewModel()
+    @State private var choosingGroup = false
+    @Environment(\.scenePhase) private var scenePhase
+    private var upcoming: [Lesson] { model.snapshot.lessons.filter { $0.endsAt >= Date() } }
+    private var days: [Date] {
+        Array(Set(upcoming.map { Calendar.current.startOfDay(for: $0.startsAt) })).sorted()
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Сегодня") {
-                    let today = weekly.lessons()
-                    if today.isEmpty {
-                        Text("Сегодня занятий нет")
-                    } else {
-                        ForEach(today) { lesson in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(lesson.subject).font(.headline)
-                                Text("\(time(lesson.start))–\(time(lesson.end))  \(lesson.room)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+            Group {
+                if model.group == nil {
+                    ContentUnavailableView {
+                        Label("Выберите группу", systemImage: "calendar.badge.clock")
+                    } description: {
+                        Text("Найдите свою группу, чтобы увидеть занятия и добавить виджет на экран.")
+                    } actions: {
+                        Button("Найти группу") { choosingGroup = true }.buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List {
+                        if let error = model.error {
+                            Section { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.secondary) }
+                        }
+                        if model.loading && model.snapshot.updatedAt == nil {
+                            ProgressView("Загружаем расписание")
+                        } else if upcoming.isEmpty {
+                            Section { Text("Предстоящих занятий нет").foregroundStyle(.secondary) }
+                        }
+                        ForEach(days, id: \.self) { day in
+                            Section(day.formatted(.dateTime.weekday(.wide).day().month())) {
+                                ForEach(upcoming.filter { Calendar.current.isDate($0.startsAt, inSameDayAs: day) }) { lesson in
+                                    LessonRow(lesson: lesson)
+                                }
                             }
                         }
-                    }
-                }
-
-                Section("Всё расписание") {
-                    ForEach(weekly) { item in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.subject).font(.headline)
-                            Text("\(weekdayName(item.weekday)), \(minutesText(item.startMinute))–\(minutesText(item.endMinute))  \(item.room)")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        if let updated = model.snapshot.updatedAt {
+                            Section { Text("Обновлено: \(updated.formatted(date: .abbreviated, time: .shortened))").font(.footnote).foregroundStyle(.secondary) }
                         }
                     }
-                    .onDelete(perform: delete)
+                    .refreshable { await model.refresh() }
                 }
             }
             .navigationTitle("Расписание")
             .toolbar {
-                Button {
-                    isAdding = true
-                } label: {
-                    Image(systemName: "plus")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(model.group?.name ?? "Группа") { choosingGroup = true }
                 }
             }
-            .sheet(isPresented: $isAdding) {
-                AddLessonView { lesson in
-                    add(lesson)
-                }
-            }
+            .sheet(isPresented: $choosingGroup) { GroupPicker { group in Task { await model.select(group) } } }
+            .task { if model.group != nil { await model.refresh() } }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.refresh() } } }
         }
-    }
-
-    private func add(_ lesson: WeeklyLesson) {
-        weekly.append(lesson)
-        weekly.sort { ($0.weekday, $0.startMinute) < ($1.weekday, $1.startMinute) }
-        saveAndRefresh()
-    }
-
-    private func delete(at offsets: IndexSet) {
-        weekly.remove(atOffsets: offsets)
-        saveAndRefresh()
-    }
-
-    private func saveAndRefresh() {
-        store.save(weekly)
-        WidgetCenter.shared.reloadAllTimelines()
-    }
-
-    private func time(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
-    }
-
-    private func weekdayName(_ weekday: Int) -> String {
-        Calendar.current.weekdaySymbols[weekday - 1].capitalized
-    }
-
-    private func minutesText(_ minutes: Int) -> String {
-        String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 }
 
-struct AddLessonView: View {
+struct LessonRow: View {
+    let lesson: Lesson
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                if lesson.isTimeUnspecified {
+                    Text("Время не указано").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(lesson.startsAt, style: .time).font(.headline)
+                    Text(lesson.endsAt, style: .time).font(.caption).foregroundStyle(.secondary)
+                }
+            }.frame(width: 52, alignment: .leading)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(lesson.title).font(.headline)
+                if !lesson.location.isEmpty { Label(lesson.location, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(.secondary) }
+                if !lesson.teacher.isEmpty { Text(lesson.teacher).font(.subheadline).foregroundStyle(.secondary) }
+            }
+        }.padding(.vertical, 4)
+    }
+}
+
+struct GroupPicker: View {
+    let onSelect: (ScheduleGroup) -> Void
     @Environment(\.dismiss) private var dismiss
-    let onSave: (WeeklyLesson) -> Void
-
-    @State private var subject = ""
-    @State private var room = ""
-    @State private var weekday = 2
-    @State private var start = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: .now) ?? .now
-    @State private var end = Calendar.current.date(bySettingHour: 10, minute: 30, second: 0, of: .now) ?? .now
-
-    /// Порядок дней: понедельник первым, воскресенье последним.
-    private let weekdays = [2, 3, 4, 5, 6, 7, 1]
+    @State private var query = ""
+    @State private var groups: [ScheduleGroup] = []
+    @State private var loading = false
+    @State private var error = false
+    private let api = ScheduleAPI()
 
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("Предмет", text: $subject)
-                TextField("Аудитория", text: $room)
-                Picker("День недели", selection: $weekday) {
-                    ForEach(weekdays, id: \.self) { day in
-                        Text(Calendar.current.weekdaySymbols[day - 1].capitalized).tag(day)
+            Group {
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView.search(text: "Введите название группы")
+                } else if loading {
+                    ProgressView("Ищем группы")
+                } else if error {
+                    ContentUnavailableView("Не удалось найти группы", systemImage: "wifi.exclamationmark", description: Text("Проверьте подключение и попробуйте снова."))
+                } else if groups.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    List(groups) { group in
+                        Button(group.name) { onSelect(group); dismiss() }
                     }
                 }
-                DatePicker("Начало", selection: $start, displayedComponents: .hourAndMinute)
-                DatePicker("Конец", selection: $end, displayedComponents: .hourAndMinute)
             }
-            .navigationTitle("Новое занятие")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") {
-                        onSave(makeLesson())
-                        dismiss()
-                    }
-                    .disabled(subject.trimmingCharacters(in: .whitespaces).isEmpty)
+            .navigationTitle("Группа")
+            .searchable(text: $query, prompt: "Например, РИ-230001")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
+            .task(id: query) {
+                let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !search.isEmpty else { groups = []; loading = false; error = false; return }
+                loading = true; error = false
+                do {
+                    try await Task.sleep(for: .milliseconds(350))
+                    let found = try await api.searchGroups(query: search)
+                    guard !Task.isCancelled else { return }
+                    groups = found; loading = false
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    groups = []; loading = false; self.error = true
                 }
             }
         }
-    }
-
-    private func makeLesson() -> WeeklyLesson {
-        let calendar = Calendar.current
-        func minutes(_ date: Date) -> Int {
-            calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
-        }
-        return WeeklyLesson(
-            subject: subject.trimmingCharacters(in: .whitespaces),
-            room: room.trimmingCharacters(in: .whitespaces),
-            weekday: weekday,
-            startMinute: minutes(start),
-            endMinute: minutes(end)
-        )
     }
 }
