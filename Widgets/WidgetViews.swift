@@ -91,6 +91,7 @@ struct NextLessonView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
             }
         }
@@ -219,7 +220,7 @@ struct DayView: View {
                         HStack(spacing: 4) {
                             Text(RU.time(lesson.startsAt)).fontWeight(.semibold).monospacedDigit()
                             Text(lesson.roomTitle).fontWeight(.heavy).widgetAccentable()
-                            Text(lesson.subject).lineLimit(1)
+                            Text(lesson.subject).lineLimit(1).minimumScaleFactor(0.7)
                         }
                         .font(.caption2)
                     }
@@ -324,6 +325,7 @@ private struct DayRow: View {
                 Text(lesson.subject)
                     .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(lesson.subgroup.map { "\(kind.title) · \($0) подгр." } ?? kind.title)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -358,6 +360,7 @@ private struct LockScreenLesson: View {
             Text(lesson.subject)
                 .font(.headline)
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
             LockScreenTiming(lesson: lesson, date: date)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

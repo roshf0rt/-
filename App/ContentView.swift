@@ -22,6 +22,12 @@ final class ScheduleViewModel: ObservableObject {
         }
     }
     @Published private(set) var notificationsDenied = false
+    @Published var useLocation = ScheduleStore.useLocation {
+        didSet {
+            ScheduleStore.useLocation = useLocation
+            shareWithWidget()
+        }
+    }
     @Published var theme = AppTheme.current {
         didSet {
             AppTheme.current = theme
@@ -52,7 +58,7 @@ final class ScheduleViewModel: ObservableObject {
     }
 
     private var sharedValues: SharedSettings.Values {
-        SharedSettings.Values(group: group, subgroup: subgroup, theme: theme.rawValue)
+        SharedSettings.Values(group: group, subgroup: subgroup, theme: theme.rawValue, useLocation: useLocation)
     }
 
     private func shareWithWidget() {
@@ -163,7 +169,7 @@ private struct ScheduleList: View {
                 let upcoming = model.lessons.filter { $0.endsAt > now }
                 let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
 
-                LazyVStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
                     if let error = model.error {
                         Label(error, systemImage: "wifi.exclamationmark")
                             .font(.footnote)
@@ -214,7 +220,13 @@ private struct ScheduleList: View {
                 .padding(.bottom, 16)
             }
         }
-        .refreshable { await model.refresh() }
+        .refreshable {
+            // A refresh that ends almost at once can leave the indicator stuck.
+            let started = Date()
+            await model.refresh()
+            let remaining = 0.7 - Date().timeIntervalSince(started)
+            if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+        }
         .sheet(item: $editing) { lesson in
             NoteEditor(lesson: lesson, schedule: model.lessons, store: notes)
         }

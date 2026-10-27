@@ -112,8 +112,11 @@ struct ScheduleProvider: TimelineProvider {
 
     /// Distances from where you are to the buildings of the next day's pairs.
     private static func travelInfo(for lessons: [Lesson], now: Date) async -> HurryInfo {
+        // Save battery: only if allowed in the app, and only in the two hours before a pair.
+        let enabled = SharedSettings.load()?.useLocation ?? (AppGroup.isShared ? ScheduleStore.useLocation : true)
+        guard enabled else { return HurryInfo() }
         let addresses = Set(lessons
-            .filter { !$0.isTimeUnspecified && $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 24 * 60 * 60 }
+            .filter { !$0.isTimeUnspecified && $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 2 * 60 * 60 }
             .map(\.shortAddress)
             .filter { !$0.isEmpty })
         guard !addresses.isEmpty else { return HurryInfo() }

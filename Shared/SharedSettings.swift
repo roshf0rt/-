@@ -9,6 +9,7 @@ enum SharedSettings {
         var group: ScheduleGroup?
         var subgroup: Int?
         var theme: String?
+        var useLocation: Bool?
     }
 
     private static let service = "ru.roshfort.urfu.settings"

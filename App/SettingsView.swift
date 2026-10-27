@@ -41,7 +41,7 @@ struct SettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
 
-                LocationSection()
+                LocationSection(enabled: $model.useLocation)
 
                 Section {
                     Picker("Напомнить о паре", selection: $model.reminderMinutes) {

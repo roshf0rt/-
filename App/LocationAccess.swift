@@ -27,10 +27,23 @@ final class LocationAccess: NSObject, ObservableObject, CLLocationManagerDelegat
 }
 
 struct LocationSection: View {
+    @Binding var enabled: Bool
     @StateObject private var access = LocationAccess()
 
     var body: some View {
         Section {
+            Toggle("Учитывать геолокацию", isOn: $enabled)
+            if enabled {
+                permission
+            }
+        } header: {
+            Text("Геолокация")
+        } footer: {
+            Text("Виджет смотрит, где вы, только в течение двух часов перед парой. В универе он спокоен, а если вы далеко — краснеет заранее и пишет «ВЫХОДИ». При запросе выберите «При использовании приложения или виджетов».")
+        }
+    }
+
+    @ViewBuilder private var permission: some View {
             switch access.status {
             case .notDetermined:
                 Button {
@@ -50,10 +63,5 @@ struct LocationSection: View {
                     Label("Геолокация запрещена — открыть настройки", systemImage: "location.slash")
                 }
             }
-        } header: {
-            Text("Геолокация")
-        } footer: {
-            Text("Виджет считает, сколько ехать до корпуса пары. В универе он спокоен, а если вы далеко — краснеет заранее и пишет «ВЫХОДИ». При запросе выберите «При использовании приложения или виджетов».")
-        }
     }
 }

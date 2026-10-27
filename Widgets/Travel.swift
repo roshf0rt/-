@@ -82,7 +82,7 @@ final class WidgetLocator: NSObject, CLLocationManagerDelegate {
 
     func current() async -> Coordinate? {
         guard manager.isAuthorizedForWidgetUpdates else { return nil }
-        if let location = manager.location, location.timestamp.timeIntervalSinceNow > -5 * 60 {
+        if let location = manager.location, location.timestamp.timeIntervalSinceNow > -10 * 60 {
             return Coordinate(location)
         }
         return await withCheckedContinuation { continuation in
