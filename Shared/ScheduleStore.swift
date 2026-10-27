@@ -8,22 +8,16 @@ enum AppGroup {
 /// Хранилище в App Group: приложение пишет, виджет читает.
 struct ScheduleStore {
     private let defaults = UserDefaults(suiteName: AppGroup.id) ?? .standard
-    private let groupKey = "selectedGroup"
-    private let lessonsKey = "lessons"
+    private let key = "weeklyLessons"
 
-    var selectedGroup: String? {
-        get { defaults.string(forKey: groupKey) }
-        nonmutating set { defaults.set(newValue, forKey: groupKey) }
-    }
-
-    func saveLessons(_ lessons: [Lesson]) {
+    func save(_ lessons: [WeeklyLesson]) {
         guard let data = try? JSONEncoder().encode(lessons) else { return }
-        defaults.set(data, forKey: lessonsKey)
+        defaults.set(data, forKey: key)
     }
 
-    func loadLessons() -> [Lesson] {
-        guard let data = defaults.data(forKey: lessonsKey),
-              let lessons = try? JSONDecoder().decode([Lesson].self, from: data) else { return [] }
+    func load() -> [WeeklyLesson] {
+        guard let data = defaults.data(forKey: key),
+              let lessons = try? JSONDecoder().decode([WeeklyLesson].self, from: data) else { return [] }
         return lessons
     }
 }

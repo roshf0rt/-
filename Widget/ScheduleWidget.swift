@@ -3,33 +3,33 @@ import WidgetKit
 
 struct ScheduleEntry: TimelineEntry {
     let date: Date
-    let group: String?
     let lessons: [Lesson]
+    let hasSchedule: Bool
 }
 
 struct ScheduleProvider: TimelineProvider {
     func placeholder(in context: Context) -> ScheduleEntry {
-        ScheduleEntry(date: .now, group: "ИЭФ-412", lessons: [])
+        ScheduleEntry(date: .now, lessons: [], hasSchedule: true)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ScheduleEntry) -> Void) {
-        completion(makeEntry(date: .now))
+        completion(makeEntry(date: .now, weekly: ScheduleStore().load()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ScheduleEntry>) -> Void) {
         let now = Date.now
-        let lessons = ScheduleStore().loadLessons()
-        let dates = Set([now] + lessons.transitionDates(after: now)).sorted()
-        let entries = dates.map { makeEntry(date: $0) }
-        // Перезапрос в начале следующего дня. Сеть из виджета не ходит:
-        // данные обновляет приложение.
-        let tomorrow = Calendar.current.startOfDay(for: now).addingTimeInterval(86_400 + 60)
-        completion(Timeline(entries: entries, policy: .after(tomorrow)))
+        let weekly = ScheduleStore().load()
+        let dates = Set([now] + weekly.lessons(on: now).transitionDates(after: now)).sorted()
+        let entries = dates.map { makeEntry(date: $0, weekly: weekly) }
+        // Новый таймлайн на следующий день. Виджет данные не загружает: всё лежит локально.
+        let calendar = Calendar.current
+        let nextMidnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
+            ?? now.addingTimeInterval(86_400)
+        completion(Timeline(entries: entries, policy: .after(nextMidnight)))
     }
 
-    private func makeEntry(date: Date) -> ScheduleEntry {
-        let store = ScheduleStore()
-        return ScheduleEntry(date: date, group: store.selectedGroup, lessons: store.loadLessons())
+    private func makeEntry(date: Date, weekly: [WeeklyLesson]) -> ScheduleEntry {
+        ScheduleEntry(date: date, lessons: weekly.lessons(on: date), hasSchedule: !weekly.isEmpty)
     }
 }
 
@@ -38,18 +38,18 @@ struct ScheduleWidgetView: View {
     let entry: ScheduleEntry
 
     var body: some View {
-        if entry.group == nil {
-            Text("Выберите группу в приложении")
-                .font(.caption)
-        } else {
+        if entry.hasSchedule {
             content
+        } else {
+            Text("Добавьте занятия в приложении")
+                .font(.caption)
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        let today = entry.lessons.today(entry.date)
-        let focus = entry.lessons.current(at: entry.date) ?? entry.lessons.next(after: entry.date)
+        let lessons = entry.lessons
+        let focus = lessons.current(at: entry.date) ?? lessons.next(after: entry.date)
 
         switch family {
         case .accessoryInline:
@@ -61,7 +61,7 @@ struct ScheduleWidgetView: View {
 
         case .accessoryCircular:
             VStack(spacing: 0) {
-                Text("\(today.count)")
+                Text("\(lessons.count)")
                     .font(.title2.bold())
                 Text("пар")
                     .font(.caption2)
@@ -73,7 +73,7 @@ struct ScheduleWidgetView: View {
                     .font(.headline)
                     .lineLimit(1)
                 if let focus {
-                    Text("\(time(focus.start))–\(time(focus.end))  \(focus.room ?? "")")
+                    Text("\(time(focus.start))–\(time(focus.end))  \(focus.room)")
                         .font(.caption)
                 }
             }
@@ -83,7 +83,7 @@ struct ScheduleWidgetView: View {
                 Text("Сегодня").font(.caption).foregroundStyle(.secondary)
                 if let focus {
                     Text(focus.subject).font(.headline).lineLimit(2)
-                    Text("\(time(focus.start))  \(focus.room ?? "")").font(.caption)
+                    Text("\(time(focus.start))  \(focus.room)").font(.caption)
                 } else {
                     Text("Занятий нет")
                 }
@@ -93,10 +93,10 @@ struct ScheduleWidgetView: View {
         default:
             VStack(alignment: .leading, spacing: 6) {
                 Text("Сегодня").font(.caption).foregroundStyle(.secondary)
-                if today.isEmpty {
+                if lessons.isEmpty {
                     Text("Занятий нет")
                 } else {
-                    ForEach(today) { lesson in
+                    ForEach(lessons) { lesson in
                         HStack(alignment: .firstTextBaseline) {
                             Text(time(lesson.start))
                                 .font(.caption.monospacedDigit())
@@ -105,7 +105,7 @@ struct ScheduleWidgetView: View {
                                 .font(.subheadline)
                                 .lineLimit(1)
                             Spacer()
-                            Text(lesson.room ?? "")
+                            Text(lesson.room)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
