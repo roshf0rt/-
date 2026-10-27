@@ -39,8 +39,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     /// The app keeps the theme in its own store; the widget reads what the app shared.
     static var stored: AppTheme {
+        // Installers may give the app and the widget different App Groups, so the widget
+        // trusts what the app put in the keychain first.
         let isWidget = Bundle.main.bundlePath.hasSuffix(".appex")
-        let raw = isWidget && !AppGroup.isShared ? SharedSettings.load()?.theme : ScheduleStore.theme
+        let raw = isWidget ? (SharedSettings.load()?.theme ?? ScheduleStore.theme) : ScheduleStore.theme
         return raw.flatMap(AppTheme.init(rawValue:)) ?? .byKind
     }
 }

@@ -23,7 +23,17 @@ enum SharedSettings {
 
     @discardableResult
     static func save(_ values: Values) -> Bool {
-        guard var query = baseQuery(), let data = try? JSONEncoder().encode(values) else { return false }
+        guard let data = try? JSONEncoder().encode(values) else { return false }
+        return saveData(data, account: account)
+    }
+
+    static func load() -> Values? {
+        loadData(account: account).flatMap { try? JSONDecoder().decode(Values.self, from: $0) }
+    }
+
+    @discardableResult
+    static func saveData(_ data: Data, account: String) -> Bool {
+        guard var query = baseQuery(account: account) else { return false }
         let attributes: [String: Any] = [
             kSecValueData as String: data,
             // The widget refreshes while the phone is locked.
@@ -38,17 +48,16 @@ enum SharedSettings {
         return status == errSecSuccess
     }
 
-    static func load() -> Values? {
-        guard var query = baseQuery() else { return nil }
+    static func loadData(account: String) -> Data? {
+        guard var query = baseQuery(account: account) else { return nil }
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return try? JSONDecoder().decode(Values.self, from: data)
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        return result as? Data
     }
 
-    private static func baseQuery() -> [String: Any]? {
+    private static func baseQuery(account: String) -> [String: Any]? {
         guard let accessGroup else { return nil }
         return [
             kSecClass as String: kSecClassGenericPassword,

@@ -10,11 +10,17 @@ enum WidgetLog {
         let stamp = Date().formatted(.dateTime.day().month(.twoDigits).hour().minute().second().locale(RU.locale))
         var lines = entries()
         lines.append("\(stamp)  \(message)")
-        AppGroup.defaults.set(Array(lines.suffix(limit)), forKey: key)
+        lines = Array(lines.suffix(limit))
+        if let data = try? JSONEncoder().encode(lines), SharedSettings.saveData(data, account: key) { return }
+        AppGroup.defaults.set(lines, forKey: key)
     }
 
     static func entries() -> [String] {
-        AppGroup.defaults.stringArray(forKey: key) ?? []
+        if let data = SharedSettings.loadData(account: key),
+           let lines = try? JSONDecoder().decode([String].self, from: data) {
+            return lines
+        }
+        return AppGroup.defaults.stringArray(forKey: key) ?? []
     }
 }
 

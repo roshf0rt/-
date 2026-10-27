@@ -39,7 +39,7 @@ final class ScheduleViewModel: ObservableObject {
 
     /// Whether the widget can see these settings.
     var widgetLinkWorks: Bool {
-        AppGroup.isShared || SharedSettings.load() == sharedValues
+        SharedSettings.load() == sharedValues
     }
 
     private func updateReminders() {

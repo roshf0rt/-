@@ -134,11 +134,11 @@ struct ScheduleProvider: TimelineProvider {
     /// Where the group comes from, in order: the shared App Group, the keychain (the app
     /// writes it there, and it survives re-signing), then the build-time default.
     private static func resolveSettings(allowNetwork: Bool) async -> (ScheduleGroup, Int?)? {
-        if AppGroup.isShared, let group = ScheduleStore.loadGroup() {
-            return (group, ScheduleStore.subgroup)
-        }
         if let shared = SharedSettings.load(), let group = shared.group {
             return (group, shared.subgroup)
+        }
+        if AppGroup.isShared, let group = ScheduleStore.loadGroup() {
+            return (group, ScheduleStore.subgroup)
         }
         guard let group = await defaultGroup(allowNetwork: allowNetwork) else { return nil }
         return (group, WidgetDefaults.subgroup)
