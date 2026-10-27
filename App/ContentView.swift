@@ -80,7 +80,10 @@ final class ScheduleViewModel: ObservableObject {
         error = nil
         defer { if refreshID == requestID { loading = false } }
         do {
-            let lessons = try await api.fetchSchedule(for: group)
+            // A separate task, so the request survives when SwiftUI cancels the calling task
+            // (pull to refresh, the launch task and returning to the app can overlap).
+            let api = self.api
+            let lessons = try await Task { try await api.fetchSchedule(for: group) }.value
             // Ignore a response if the user selected another group in the meantime.
             guard self.group == group, refreshID == requestID else { return }
             let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: Date())
@@ -90,6 +93,7 @@ final class ScheduleViewModel: ObservableObject {
             updateReminders()
         } catch {
             guard refreshID == requestID else { return }
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             self.error = error.localizedDescription
         }
     }
