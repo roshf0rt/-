@@ -72,7 +72,7 @@ struct NextLessonView: View {
                     .foregroundStyle(lesson.lessonKind.color)
                     .lineLimit(1)
                     .minimumScaleFactor(0.4)
-                Text(lesson.address)
+                Text(lesson.shortAddress)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -85,6 +85,8 @@ struct NextLessonView: View {
                 Text(lesson.subject)
                     .font(.headline)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(RU.timeRange(lesson))
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
@@ -96,7 +98,7 @@ struct NextLessonView: View {
                 }
                 Spacer(minLength: 0)
                 if let next = entry.following {
-                    Text("Затем: \(WidgetText.when(next, at: entry.date)) · \(next.roomTitle) · \(next.subject)")
+                    Text("Затем: \(WidgetText.when(next, at: lesson.startsAt)) · \(next.roomTitle) · \(next.subject)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -168,8 +170,8 @@ struct RoomView: View {
                         .foregroundStyle(lesson.lessonKind.color)
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
-                    if !lesson.address.isEmpty {
-                        Text(lesson.address)
+                    if !lesson.shortAddress.isEmpty {
+                        Text(lesson.shortAddress)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -263,7 +265,9 @@ private struct DayRow: View {
                 }
             }
             .monospacedDigit()
-            .frame(width: 40, alignment: .leading)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(width: 46, alignment: .leading)
             VStack(alignment: .leading, spacing: 0) {
                 Text(lesson.subject)
                     .font(.subheadline.weight(.semibold))

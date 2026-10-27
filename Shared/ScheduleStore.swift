@@ -25,17 +25,37 @@ enum AppGroup {
     }
 
     private static func provisionedGroups() -> [String] {
+        let groups = ProvisioningProfile.entitlements["com.apple.security.application-groups"] as? [String] ?? []
+        return groups.filter { !$0.contains("*") }
+    }
+}
+
+/// The embedded provisioning profile, which tells what the installed build may share.
+enum ProvisioningProfile {
+    static let contents: [String: Any] = {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
               let start = data.range(of: Data("<?xml".utf8)),
               let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
               let plist = try? PropertyListSerialization.propertyList(
                   from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil
-              ) as? [String: Any],
-              let entitlements = plist["Entitlements"] as? [String: Any],
-              let groups = entitlements["com.apple.security.application-groups"] as? [String]
-        else { return [] }
-        return groups.filter { !$0.contains("*") }
+              ) as? [String: Any]
+        else { return [:] }
+        return plist
+    }()
+
+    static var entitlements: [String: Any] {
+        contents["Entitlements"] as? [String: Any] ?? [:]
+    }
+
+    /// Team ID prefix used in keychain access groups, e.g. "ABCDE12345".
+    static var teamPrefix: String? {
+        if let prefix = (contents["ApplicationIdentifierPrefix"] as? [String])?.first { return prefix }
+        if let team = (contents["TeamIdentifier"] as? [String])?.first { return team }
+        if let appID = entitlements["application-identifier"] as? String, let dot = appID.firstIndex(of: ".") {
+            return String(appID[..<dot])
+        }
+        return nil
     }
 }
 

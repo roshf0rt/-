@@ -36,6 +36,15 @@ enum LessonKind {
 extension Lesson {
     var lessonKind: LessonKind { LessonKind(kind) }
     var roomTitle: String { room.isEmpty ? "—" : room }
+
+    /// Адрес без пометок в скобках: «(гибридный формат) Ленина, 51» → «Ленина, 51».
+    var shortAddress: String {
+        address.replacingOccurrences(of: #"\([^)]*\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,").union(.whitespacesAndNewlines))
+    }
+
+    var isHybrid: Bool { "\(room) \(address)".localizedCaseInsensitiveContains("гибрид") }
 }
 
 /// Даты и время по-русски независимо от языка, выбранного для приложения.

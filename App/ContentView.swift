@@ -10,7 +10,7 @@ final class ScheduleViewModel: ObservableObject {
     @Published var subgroup = ScheduleStore.subgroup {
         didSet {
             ScheduleStore.subgroup = subgroup
-            WidgetCenter.shared.reloadAllTimelines()
+            shareWithWidget()
         }
     }
     private let api = ScheduleAPI()
@@ -18,6 +18,17 @@ final class ScheduleViewModel: ObservableObject {
 
     init() {
         if let group { snapshot = ScheduleStore.snapshot(for: group.id) }
+        shareWithWidget()
+    }
+
+    /// Whether the widget can see these settings.
+    var widgetLinkWorks: Bool {
+        AppGroup.isShared || SharedSettings.load() == SharedSettings.Values(group: group, subgroup: subgroup)
+    }
+
+    private func shareWithWidget() {
+        SharedSettings.save(SharedSettings.Values(group: group, subgroup: subgroup))
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     var lessons: [Lesson] { (snapshot?.lessons ?? []).visible(forSubgroup: subgroup) }
@@ -28,7 +39,7 @@ final class ScheduleViewModel: ObservableObject {
         self.group = group
         ScheduleStore.saveGroup(group)
         snapshot = ScheduleStore.snapshot(for: group.id)
-        WidgetCenter.shared.reloadAllTimelines()
+        shareWithWidget()
         await refresh()
     }
 
@@ -188,7 +199,8 @@ private struct FocusCard: View {
     private var details: String {
         var parts = [lesson.lessonKind.title]
         if let subgroup = lesson.subgroup { parts.append("\(subgroup) подгруппа") }
-        if !lesson.address.isEmpty { parts.append(lesson.address) }
+        if !lesson.shortAddress.isEmpty { parts.append(lesson.shortAddress) }
+        if lesson.isHybrid { parts.append("гибрид") }
         return parts.joined(separator: " · ")
     }
 
@@ -283,18 +295,21 @@ private struct LessonCard: View {
                     if let subgroup = lesson.subgroup {
                         Chip("\(subgroup) подгруппа", color: .mint)
                     }
+                    if lesson.isHybrid {
+                        Chip("Гибрид", color: .indigo)
+                    }
                     if isCurrent {
                         Chip("Идёт сейчас", color: .green)
                     }
                 }
 
-                if !lesson.room.isEmpty || !lesson.address.isEmpty {
+                if !lesson.room.isEmpty || !lesson.shortAddress.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: "door.left.hand.open")
                             .foregroundStyle(.secondary)
                         Text(lesson.roomTitle).fontWeight(.bold)
-                        if !lesson.address.isEmpty {
-                            Text(lesson.address).foregroundStyle(.secondary)
+                        if !lesson.shortAddress.isEmpty {
+                            Text(lesson.shortAddress).foregroundStyle(.secondary)
                         }
                     }
                     .font(.subheadline)

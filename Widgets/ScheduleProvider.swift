@@ -46,9 +46,10 @@ struct ScheduleProvider: TimelineProvider {
     }
 
     private static func entries(now: Date, allowNetwork: Bool) async -> [ScheduleEntry] {
-        guard let group = await resolveGroup(allowNetwork: allowNetwork) else {
+        guard let settings = await resolveSettings(allowNetwork: allowNetwork) else {
             return [ScheduleEntry(date: now, status: .noGroup, groupName: "", lessons: [])]
         }
+        let (group, subgroup) = settings
 
         var snapshot = ScheduleStore.snapshot(for: group.id)
         if allowNetwork, snapshot.map({ now.timeIntervalSince($0.updatedAt) > staleAfter }) ?? true {
@@ -68,7 +69,6 @@ struct ScheduleProvider: TimelineProvider {
             return [ScheduleEntry(date: now, status: .noData, groupName: group.name, lessons: [])]
         }
 
-        let subgroup = AppGroup.isShared ? ScheduleStore.subgroup : WidgetDefaults.subgroup
         let lessons = snapshot.lessons.visible(forSubgroup: subgroup)
         // Redraw at every start and end of a pair, and at midnight for the day view.
         let calendar = Calendar.current
@@ -87,10 +87,22 @@ struct ScheduleProvider: TimelineProvider {
         }
     }
 
-    /// The app's group when the App Group is shared; otherwise the build-time default,
-    /// looked up once on the site and then cached in the widget's own storage.
-    private static func resolveGroup(allowNetwork: Bool) async -> ScheduleGroup? {
-        if let group = ScheduleStore.loadGroup() { return group }
+    /// Where the group comes from, in order: the shared App Group, the keychain (the app
+    /// writes it there, and it survives re-signing), then the build-time default.
+    private static func resolveSettings(allowNetwork: Bool) async -> (ScheduleGroup, Int?)? {
+        if AppGroup.isShared, let group = ScheduleStore.loadGroup() {
+            return (group, ScheduleStore.subgroup)
+        }
+        if let shared = SharedSettings.load(), let group = shared.group {
+            return (group, shared.subgroup)
+        }
+        guard let group = await defaultGroup(allowNetwork: allowNetwork) else { return nil }
+        return (group, WidgetDefaults.subgroup)
+    }
+
+    /// The build-time default, looked up once on the site and cached in the widget's own storage.
+    private static func defaultGroup(allowNetwork: Bool) async -> ScheduleGroup? {
+        if let group = ScheduleStore.loadGroup(), group.name == WidgetDefaults.groupName { return group }
         guard allowNetwork else { return nil }
         let name = WidgetDefaults.groupName
         do {

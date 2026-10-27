@@ -27,10 +27,11 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if AppGroup.isShared {
-                        Label("Виджеты берут группу и подгруппу из этих настроек.", systemImage: "square.text.square")
+                    if model.widgetLinkWorks {
+                        Label("Связь с виджетом работает: виджеты берут группу и подгруппу из этих настроек.",
+                              systemImage: "checkmark.circle")
                     } else {
-                        Label("Программа, которой установлено приложение, убрала общую папку, поэтому виджеты не видят эти настройки. В виджетах: \(WidgetDefaults.groupName), \(WidgetDefaults.subgroup.map { "\($0) подгруппа" } ?? "все пары"). Это задаётся в сборке.",
+                        Label("Связь с виджетом не работает (код \(SharedSettings.lastStatus.map { "\($0)" } ?? "—")). В виджетах: \(WidgetDefaults.groupName), \(WidgetDefaults.subgroup.map { "\($0) подгруппа" } ?? "все пары").",
                               systemImage: "exclamationmark.triangle")
                     }
                     Label("Виджеты: «Ближайшая пара», «Кабинет» и «Пары на день». Есть версии для экрана блокировки.",
