@@ -17,8 +17,8 @@ spec = spec.replace('PRODUCT_BUNDLE_IDENTIFIER: ' + app_id + '\n',
 spec = spec.replace('PRODUCT_BUNDLE_IDENTIFIER: ' + app_id + '.ScheduleWidget\n',
                     'PRODUCT_BUNDLE_IDENTIFIER: ' + app_id + '.ScheduleWidget\n        CODE_SIGN_STYLE: Manual\n        CODE_SIGN_IDENTITY: Apple Distribution\n        PROVISIONING_PROFILE_SPECIFIER: ' + widget_profile + '\n')
 project.write_text(spec)
-models = Path('Shared/Models.swift')
-models.write_text(models.read_text().replace('group.ru.roshfort.urfu.schedule', group_id))
+store = Path('Shared/ScheduleStore.swift')
+store.write_text(store.read_text().replace('group.ru.roshfort.urfu.schedule', group_id))
 options = {'method': 'ad-hoc', 'signingStyle': 'manual', 'teamID': team,
            'provisioningProfiles': {app_id: app_profile, app_id + '.ScheduleWidget': widget_profile}}
 with open(Path(get('RUNNER_TEMP')) / 'ExportOptions.plist', 'wb') as output:

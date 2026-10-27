@@ -3,19 +3,31 @@ import WidgetKit
 
 @MainActor
 final class ScheduleViewModel: ObservableObject {
-    @Published var group = ScheduleStore.loadGroup()
-    @Published var snapshot = ScheduleStore.load()
-    @Published var loading = false
-    @Published var error: String?
+    @Published private(set) var group = ScheduleStore.loadGroup()
+    @Published private(set) var snapshot: ScheduleSnapshot?
+    @Published private(set) var loading = false
+    @Published private(set) var error: String?
+    @Published var subgroup = ScheduleStore.subgroup {
+        didSet {
+            ScheduleStore.subgroup = subgroup
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
     private let api = ScheduleAPI()
     private var refreshID = UUID()
+
+    init() {
+        if let group { snapshot = ScheduleStore.snapshot(for: group.id) }
+    }
+
+    var lessons: [Lesson] { (snapshot?.lessons ?? []).visible(forSubgroup: subgroup) }
+
+    var hasSubgroups: Bool { snapshot?.lessons.contains { $0.subgroup != nil } ?? false }
 
     func select(_ group: ScheduleGroup) async {
         self.group = group
         ScheduleStore.saveGroup(group)
-        // Avoid showing the previous group's classes under the new group name.
-        snapshot = ScheduleSnapshot(groupName: group.name, lessons: [], updatedAt: nil)
-        ScheduleStore.save(snapshot)
+        snapshot = ScheduleStore.snapshot(for: group.id)
         WidgetCenter.shared.reloadAllTimelines()
         await refresh()
     }
@@ -28,11 +40,12 @@ final class ScheduleViewModel: ObservableObject {
         error = nil
         defer { if refreshID == requestID { loading = false } }
         do {
-            let lessons = try await api.fetchSchedule(for: group).sorted { $0.startsAt < $1.startsAt }
+            let lessons = try await api.fetchSchedule(for: group)
             // Ignore a response if the user selected another group in the meantime.
             guard self.group == group, refreshID == requestID else { return }
-            snapshot = ScheduleSnapshot(groupName: group.name, lessons: lessons, updatedAt: Date())
-            ScheduleStore.save(snapshot)
+            let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: Date())
+            snapshot = fresh
+            ScheduleStore.save(fresh)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             guard refreshID == requestID else { return }
@@ -44,11 +57,8 @@ final class ScheduleViewModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var model = ScheduleViewModel()
     @State private var choosingGroup = false
+    @State private var showingSettings = false
     @Environment(\.scenePhase) private var scenePhase
-    private var upcoming: [Lesson] { model.snapshot.lessons.filter { $0.endsAt >= Date() } }
-    private var days: [Date] {
-        Array(Set(upcoming.map { Calendar.current.startOfDay(for: $0.startsAt) })).sorted()
-    }
 
     var body: some View {
         NavigationStack {
@@ -57,111 +67,258 @@ struct ContentView: View {
                     ContentUnavailableView {
                         Label("Выберите группу", systemImage: "calendar.badge.clock")
                     } description: {
-                        Text("Найдите свою группу, чтобы увидеть занятия и добавить виджет на экран.")
+                        Text("Найдите свою группу, чтобы видеть пары в приложении и в виджетах.")
                     } actions: {
-                        Button("Найти группу") { choosingGroup = true }.buttonStyle(.borderedProminent)
+                        Button("Найти группу") { choosingGroup = true }
+                            .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    List {
-                        if let error = model.error {
-                            Section { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.secondary) }
-                        }
-                        if model.loading && model.snapshot.updatedAt == nil {
-                            ProgressView("Загружаем расписание")
-                        } else if upcoming.isEmpty {
-                            Section { Text("Предстоящих занятий нет").foregroundStyle(.secondary) }
-                        }
-                        ForEach(days, id: \.self) { day in
-                            Section(day.formatted(.dateTime.weekday(.wide).day().month())) {
-                                ForEach(upcoming.filter { Calendar.current.isDate($0.startsAt, inSameDayAs: day) }) { lesson in
-                                    LessonRow(lesson: lesson)
-                                }
-                            }
-                        }
-                        if let updated = model.snapshot.updatedAt {
-                            Section { Text("Обновлено: \(updated.formatted(date: .abbreviated, time: .shortened))").font(.footnote).foregroundStyle(.secondary) }
-                        }
-                    }
-                    .refreshable { await model.refresh() }
+                    ScheduleList(model: model)
                 }
             }
-            .navigationTitle("Расписание")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle(model.group?.name ?? "Расписание")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(model.group?.name ?? "Группа") { choosingGroup = true }
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .accessibilityLabel("Настройки")
                 }
             }
-            .sheet(isPresented: $choosingGroup) { GroupPicker { group in Task { await model.select(group) } } }
-            .task { if model.group != nil { await model.refresh() } }
-            .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.refresh() } } }
+            .sheet(isPresented: $choosingGroup) {
+                GroupPicker { group in Task { await model.select(group) } }
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(model: model)
+            }
+            .task { await model.refresh() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await model.refresh() } }
+            }
+        }
+        .environment(\.locale, RU.locale)
+    }
+}
+
+private struct ScheduleList: View {
+    @ObservedObject var model: ScheduleViewModel
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let now = context.date
+            let upcoming = model.lessons.filter { $0.endsAt > now }
+            let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if let error = model.error {
+                        Label(error, systemImage: "wifi.exclamationmark")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                    }
+
+                    if model.hasSubgroups {
+                        SubgroupPicker(selection: $model.subgroup)
+                    }
+
+                    if let focus = upcoming.focus(at: now) {
+                        FocusCard(lesson: focus, now: now)
+                    }
+
+                    if model.loading && model.snapshot == nil {
+                        ProgressView("Загружаем расписание")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                    } else if upcoming.isEmpty {
+                        ContentUnavailableView("Пар нет", systemImage: "cup.and.saucer",
+                                               description: Text("В ближайшие две недели занятий не найдено."))
+                    }
+
+                    ForEach(days.keys.sorted(), id: \.self) { day in
+                        Text(RU.dayTitle(day, now: now))
+                            .font(.title3.weight(.bold))
+                            .padding(.top, 12)
+                            .padding(.horizontal, 4)
+                        ForEach(days[day] ?? []) { lesson in
+                            LessonCard(lesson: lesson, now: now)
+                        }
+                    }
+
+                    if let updated = model.snapshot?.updatedAt {
+                        Text("Обновлено \(RU.shortDay(updated, now: now).lowercased(with: RU.locale)) в \(RU.time(updated))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
+            .refreshable { await model.refresh() }
         }
     }
 }
 
-struct LessonRow: View {
-    let lesson: Lesson
+struct SubgroupPicker: View {
+    @Binding var selection: Int?
+
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                if lesson.isTimeUnspecified {
-                    Text("Время не указано").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text(lesson.startsAt, style: .time).font(.headline)
-                    Text(lesson.endsAt, style: .time).font(.caption).foregroundStyle(.secondary)
-                }
-            }.frame(width: 52, alignment: .leading)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(lesson.title).font(.headline)
-                if !lesson.location.isEmpty { Label(lesson.location, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(.secondary) }
-                if !lesson.teacher.isEmpty { Text(lesson.teacher).font(.subheadline).foregroundStyle(.secondary) }
-            }
-        }.padding(.vertical, 4)
+        Picker("Подгруппа", selection: $selection) {
+            Text("Все пары").tag(Int?.none)
+            Text("1 подгруппа").tag(Int?.some(1))
+            Text("2 подгруппа").tag(Int?.some(2))
+        }
+        .pickerStyle(.segmented)
     }
 }
 
-struct GroupPicker: View {
-    let onSelect: (ScheduleGroup) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var groups: [ScheduleGroup] = []
-    @State private var loading = false
-    @State private var error = false
-    private let api = ScheduleAPI()
+/// Текущая или ближайшая пара с крупным номером кабинета.
+private struct FocusCard: View {
+    let lesson: Lesson
+    let now: Date
+
+    private var isCurrent: Bool { lesson.isOngoing(at: now) }
+    private var color: Color { lesson.lessonKind.color }
+
+    private var details: String {
+        var parts = [lesson.lessonKind.title]
+        if let subgroup = lesson.subgroup { parts.append("\(subgroup) подгруппа") }
+        if !lesson.address.isEmpty { parts.append(lesson.address) }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView.search(text: "Введите название группы")
-                } else if loading {
-                    ProgressView("Ищем группы")
-                } else if error {
-                    ContentUnavailableView("Не удалось найти группы", systemImage: "wifi.exclamationmark", description: Text("Проверьте подключение и попробуйте снова."))
-                } else if groups.isEmpty {
-                    ContentUnavailableView.search(text: query)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(isCurrent ? "СЕЙЧАС" : "СЛЕДУЮЩАЯ ПАРА")
+                    .font(.caption.weight(.heavy))
+                    .tracking(0.6)
+                Spacer()
+                Text(isCurrent ? RU.minutesLeft(until: lesson.endsAt, now: now) : RU.startsIn(lesson, now: now))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(.white.opacity(0.2), in: Capsule())
+            }
+
+            HStack(alignment: .lastTextBaseline) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Кабинет")
+                        .font(.caption.weight(.medium))
+                        .opacity(0.8)
+                    Text(lesson.roomTitle)
+                        .font(.system(size: 52, weight: .heavy, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.4)
+                }
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(RU.time(lesson.startsAt))
+                        .font(.title2.weight(.bold))
+                    Text(RU.time(lesson.endsAt))
+                        .font(.subheadline)
+                        .opacity(0.8)
+                }
+                .monospacedDigit()
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(lesson.subject)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text(details)
+                    .font(.subheadline)
+                    .opacity(0.85)
+                    .lineLimit(2)
+            }
+
+            if isCurrent {
+                ProgressView(value: now.timeIntervalSince(lesson.startsAt),
+                             total: lesson.endsAt.timeIntervalSince(lesson.startsAt))
+                    .tint(.white)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(18)
+        .background(
+            LinearGradient(colors: [color, color.opacity(0.65)], startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+        )
+        .padding(.top, 4)
+    }
+}
+
+private struct LessonCard: View {
+    let lesson: Lesson
+    let now: Date
+
+    private var isCurrent: Bool { lesson.isOngoing(at: now) }
+    private var kind: LessonKind { lesson.lessonKind }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                if lesson.isTimeUnspecified {
+                    Text("—").font(.title3.weight(.semibold))
                 } else {
-                    List(groups) { group in
-                        Button(group.name) { onSelect(group); dismiss() }
+                    Text(RU.time(lesson.startsAt)).font(.title3.weight(.semibold))
+                    Text(RU.time(lesson.endsAt)).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .monospacedDigit()
+            .frame(width: 58, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(lesson.subject)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 6) {
+                    Chip(kind.title, color: kind.color)
+                    if let subgroup = lesson.subgroup {
+                        Chip("\(subgroup) подгруппа", color: .mint)
+                    }
+                    if isCurrent {
+                        Chip("Идёт сейчас", color: .green)
                     }
                 }
-            }
-            .navigationTitle("Группа")
-            .searchable(text: $query, prompt: "Например, РИ-230001")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
-            .task(id: query) {
-                let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !search.isEmpty else { groups = []; loading = false; error = false; return }
-                loading = true; error = false
-                do {
-                    try await Task.sleep(for: .milliseconds(350))
-                    let found = try await api.searchGroups(query: search)
-                    guard !Task.isCancelled else { return }
-                    groups = found; loading = false
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    groups = []; loading = false; self.error = true
+
+                if !lesson.room.isEmpty || !lesson.address.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "door.left.hand.open")
+                            .foregroundStyle(.secondary)
+                        Text(lesson.roomTitle).fontWeight(.bold)
+                        if !lesson.address.isEmpty {
+                            Text(lesson.address).foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+                }
+
+                if !lesson.teacher.isEmpty {
+                    Label(lesson.teacher, systemImage: "person")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
+            .padding(.leading, 12)
+            .overlay(alignment: .leading) {
+                Capsule().fill(kind.color).frame(width: 4)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(isCurrent ? Color.green.opacity(0.7) : .clear, lineWidth: 1.5)
         }
     }
 }

@@ -7,47 +7,60 @@ struct ScheduleGroup: Identifiable, Codable, Hashable {
 
 struct Lesson: Identifiable, Codable, Hashable {
     var id: String
-    var title: String
+    var subject: String
+    /// Тип занятия как его пишет УрФУ: «лекции», «практические занятия»…
+    var kind: String
     var startsAt: Date
     var endsAt: Date
-    var location: String
+    var room: String
+    var address: String
     var teacher: String
-    var isTimeUnspecified: Bool = false
+    /// Номер подгруппы; nil — занятие для всей группы.
+    var subgroup: Int?
+    var isTimeUnspecified: Bool
 }
 
 struct ScheduleSnapshot: Codable {
-    var groupName: String
+    var group: ScheduleGroup
     var lessons: [Lesson]
-    var updatedAt: Date?
-
-    static let empty = ScheduleSnapshot(groupName: "", lessons: [], updatedAt: nil)
+    var updatedAt: Date
 }
 
-enum ScheduleStore {
-    // This must match the App Group entitlement of both targets.
-    static let appGroup = "group.ru.roshfort.urfu.schedule"
-    private static let snapshotKey = "schedule.snapshot.v1"
-    private static let groupKey = "schedule.group.v1"
-    private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
-
-    static func load() -> ScheduleSnapshot {
-        guard let data = defaults?.data(forKey: snapshotKey),
-              let snapshot = try? JSONDecoder().decode(ScheduleSnapshot.self, from: data) else { return .empty }
-        return snapshot
+extension Lesson {
+    func isVisible(forSubgroup subgroup: Int?) -> Bool {
+        guard let subgroup, let own = self.subgroup else { return true }
+        return own == subgroup
     }
 
-    static func save(_ snapshot: ScheduleSnapshot) {
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        defaults?.set(data, forKey: snapshotKey)
+    func isOngoing(at date: Date) -> Bool {
+        !isTimeUnspecified && startsAt <= date && date < endsAt
+    }
+}
+
+extension Array where Element == Lesson {
+    func visible(forSubgroup subgroup: Int?) -> [Lesson] {
+        filter { $0.isVisible(forSubgroup: subgroup) }.sorted { $0.startsAt < $1.startsAt }
     }
 
-    static func loadGroup() -> ScheduleGroup? {
-        guard let data = defaults?.data(forKey: groupKey) else { return nil }
-        return try? JSONDecoder().decode(ScheduleGroup.self, from: data)
+    func current(at date: Date) -> Lesson? {
+        first { $0.isOngoing(at: date) }
     }
 
-    static func saveGroup(_ group: ScheduleGroup) {
-        guard let data = try? JSONEncoder().encode(group) else { return }
-        defaults?.set(data, forKey: groupKey)
+    func next(after date: Date) -> Lesson? {
+        first { !$0.isTimeUnspecified && $0.startsAt > date }
+    }
+
+    /// Текущая пара, а если её нет — ближайшая.
+    func focus(at date: Date) -> Lesson? {
+        current(at: date) ?? next(after: date)
+    }
+
+    /// Оставшиеся пары сегодня, а если их нет — пары ближайшего учебного дня.
+    func agenda(at date: Date) -> (day: Date, lessons: [Lesson])? {
+        let calendar = Calendar.current
+        let upcoming = filter { $0.endsAt > date }
+        guard let first = upcoming.first else { return nil }
+        let day = calendar.startOfDay(for: first.startsAt)
+        return (day, upcoming.filter { calendar.isDate($0.startsAt, inSameDayAs: day) })
     }
 }
