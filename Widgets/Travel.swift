@@ -21,7 +21,8 @@ struct HurryInfo {
         guard let distance = distance(to: lesson) else { return TimeInterval(Hurry.minutes * 60) }
         if distance <= Self.campusRadius { return 0 }
         let travel = distance / 1000 * 4 + 5
-        return max(Double(Hurry.minutes), min(travel + 5, 120)) * 60
+        // Location is only checked in the hour before a pair, so the lead never exceeds it.
+        return max(Double(Hurry.minutes), min(travel + 5, 60)) * 60
     }
 
     func isSoon(_ lesson: Lesson, at date: Date) -> Bool {

@@ -48,7 +48,7 @@ struct ScheduleProvider: TimelineProvider {
             // Reload before the ring entries run out, at the latest after the cache goes stale.
             // With location on, refresh often before a pair so the distance stays current.
             let pairSoon = entries.first.map { entry in
-                entry.lessons.contains { $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 2 * 60 * 60 }
+                entry.lessons.contains { $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 60 * 60 }
             } ?? false
             let tracking = !(entries.first?.hurry.distances.isEmpty ?? true)
             let reload = !hasData ? 15 * 60 : (tracking && pairSoon ? 15 * 60 : min(Self.staleAfter, Self.ringHorizon))
@@ -112,11 +112,12 @@ struct ScheduleProvider: TimelineProvider {
 
     /// Distances from where you are to the buildings of the next day's pairs.
     private static func travelInfo(for lessons: [Lesson], now: Date) async -> HurryInfo {
-        // Save battery: only if allowed in the app, and only in the two hours before a pair.
+        // Save battery: only if allowed in the app, never during a pair (you are already
+        // there), and only in the hour before one.
         let enabled = SharedSettings.load()?.useLocation ?? (AppGroup.isShared ? ScheduleStore.useLocation : true)
-        guard enabled else { return HurryInfo() }
+        guard enabled, !lessons.contains(where: { $0.isOngoing(at: now) }) else { return HurryInfo() }
         let addresses = Set(lessons
-            .filter { !$0.isTimeUnspecified && $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 2 * 60 * 60 }
+            .filter { !$0.isTimeUnspecified && $0.startsAt > now && $0.startsAt.timeIntervalSince(now) < 60 * 60 }
             .map(\.shortAddress)
             .filter { !$0.isEmpty })
         guard !addresses.isEmpty else { return HurryInfo() }
