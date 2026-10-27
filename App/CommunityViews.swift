@@ -4,8 +4,10 @@ import SwiftUI
 struct CommunitySection: View {
     @ObservedObject var community: CommunityStore
     let group: ScheduleGroup?
+    /// The picker is presented by SettingsView: a sheet attached to a Form section is torn
+    /// down when the form re-lays out (e.g. the keyboard appears) and closes by itself.
+    let onAddGroup: () -> Void
     @State private var nickname = ""
-    @State private var addingGroup = false
     @State private var saving = false
 
     private var trimmed: String { nickname.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -47,7 +49,7 @@ struct CommunitySection: View {
             }
             .onDelete { community.stream.remove(atOffsets: $0) }
             Button {
-                addingGroup = true
+                onAddGroup()
             } label: {
                 Label("Добавить группу потока", systemImage: "plus")
             }
@@ -55,13 +57,6 @@ struct CommunitySection: View {
             Text("Мой поток")
         } footer: {
             Text("ДЗ с пометкой «Потоку» увидят все эти группы. Потоковая пара узнаётся по предмету и времени начала.")
-        }
-        .sheet(isPresented: $addingGroup) {
-            GroupPicker { picked in
-                if picked.id != group?.id && !community.stream.contains(picked) {
-                    community.stream.append(picked)
-                }
-            }
         }
 
         Section {

@@ -4,14 +4,19 @@ struct SettingsView: View {
     @ObservedObject var model: ScheduleViewModel
     @ObservedObject var community: CommunityStore
     @Environment(\.dismiss) private var dismiss
-    @State private var choosingGroup = false
+    @State private var picker: PickerTarget?
+
+    private enum PickerTarget: Identifiable {
+        case ownGroup, streamGroup
+        var id: Self { self }
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Группа") {
                     Button {
-                        choosingGroup = true
+                        picker = .ownGroup
                     } label: {
                         LabeledContent("Группа", value: model.group?.name ?? "Не выбрана")
                     }
@@ -42,7 +47,7 @@ struct SettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
 
-                CommunitySection(community: community, group: model.group)
+                CommunitySection(community: community, group: model.group) { picker = .streamGroup }
 
                 LocationSection(enabled: $model.useLocation)
 
@@ -120,8 +125,17 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } }
             }
-            .sheet(isPresented: $choosingGroup) {
-                GroupPicker { group in Task { await model.select(group) } }
+            .sheet(item: $picker) { target in
+                switch target {
+                case .ownGroup:
+                    GroupPicker { group in Task { await model.select(group) } }
+                case .streamGroup:
+                    GroupPicker { picked in
+                        if picked.id != model.group?.id && !community.stream.contains(picked) {
+                            community.stream.append(picked)
+                        }
+                    }
+                }
             }
         }
         .environment(\.locale, RU.locale)
