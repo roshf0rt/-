@@ -155,12 +155,14 @@ private struct ScheduleList: View {
     @State private var editing: Lesson?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            let now = context.date
-            let upcoming = model.lessons.filter { $0.endsAt > now }
-            let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
+        // The scroll view stays outside the timeline: rebuilding it every 30 seconds
+        // left the pull-to-refresh indicator stuck with an empty gap above the title.
+        ScrollView {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                let now = context.date
+                let upcoming = model.lessons.filter { $0.endsAt > now }
+                let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
 
-            ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if let error = model.error {
                         Label(error, systemImage: "wifi.exclamationmark")
@@ -211,10 +213,10 @@ private struct ScheduleList: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            .refreshable { await model.refresh() }
-            .sheet(item: $editing) { lesson in
-                NoteEditor(lesson: lesson, schedule: model.lessons, store: notes)
-            }
+        }
+        .refreshable { await model.refresh() }
+        .sheet(item: $editing) { lesson in
+            NoteEditor(lesson: lesson, schedule: model.lessons, store: notes)
         }
     }
 }
