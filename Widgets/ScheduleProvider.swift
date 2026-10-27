@@ -23,6 +23,8 @@ struct ScheduleEntry: TimelineEntry {
 /// re-signed without App Groups, while static ones render.
 struct ScheduleProvider: TimelineProvider {
     private static let staleAfter: TimeInterval = 60 * 60
+    private static let ringStep: TimeInterval = 2 * 60
+    private static let ringHorizon: TimeInterval = 3 * 60 * 60
 
     func placeholder(in context: Context) -> ScheduleEntry { .preview }
 
@@ -41,7 +43,9 @@ struct ScheduleProvider: TimelineProvider {
             let now = Date()
             let entries = await Self.entries(now: now, allowNetwork: true)
             let hasData = entries.first?.status == .ready
-            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(hasData ? Self.staleAfter : 15 * 60))))
+            // Reload before the ring entries run out, at the latest after the cache goes stale.
+            let reload = hasData ? min(Self.staleAfter, Self.ringHorizon) : 15 * 60
+            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(reload))))
         }
     }
 
@@ -70,13 +74,21 @@ struct ScheduleProvider: TimelineProvider {
         }
 
         let lessons = snapshot.lessons.visible(forSubgroup: subgroup)
-        // Redraw at every start and end of a pair, and at midnight for the day view.
+        // Redraw at every start and end of a pair, when it is time to go, and at midnight
+        // for the day view. During a pair, every 2 minutes so the ring shrinks; that is
+        // limited to the next hours, after which the timeline is reloaded.
         let calendar = Calendar.current
         let horizon = now.addingTimeInterval(24 * 60 * 60)
         var dates: Set<Date> = [now]
         for lesson in lessons where !lesson.isTimeUnspecified {
-            for date in [lesson.startsAt, lesson.endsAt] where date > now && date < horizon {
+            let hurry = lesson.startsAt.addingTimeInterval(-TimeInterval(Hurry.minutes * 60))
+            for date in [hurry, lesson.startsAt, lesson.endsAt] where date > now && date < horizon {
                 dates.insert(date)
+            }
+            var tick = max(lesson.startsAt, now).addingTimeInterval(ringStep)
+            while tick < lesson.endsAt && tick < now.addingTimeInterval(ringHorizon) {
+                dates.insert(tick)
+                tick = tick.addingTimeInterval(ringStep)
             }
         }
         if let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) {

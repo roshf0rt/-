@@ -117,3 +117,27 @@ struct Chip: View {
             .background(color.opacity(0.16), in: Capsule())
     }
 }
+
+/// За сколько минут до пары виджет краснеет.
+enum Hurry {
+    static let minutes = 15
+}
+
+extension Lesson {
+    /// Пара вот-вот начнётся — пора идти.
+    func isSoon(at date: Date) -> Bool {
+        !isTimeUnspecified && startsAt > date && startsAt.timeIntervalSince(date) <= TimeInterval(Hurry.minutes * 60)
+    }
+
+    /// Красный, когда пора идти, иначе цвет типа занятия.
+    func accent(at date: Date) -> Color {
+        isSoon(at: date) ? .red : lessonKind.color
+    }
+
+    /// Сколько пары осталось: 1 — только началась, 0 — закончилась.
+    func remainingFraction(at date: Date) -> Double {
+        let total = endsAt.timeIntervalSince(startsAt)
+        guard total > 0 else { return 0 }
+        return min(max(endsAt.timeIntervalSince(date) / total, 0), 1)
+    }
+}

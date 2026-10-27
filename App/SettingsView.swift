@@ -27,6 +27,24 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Напомнить о паре", selection: $model.reminderMinutes) {
+                        Text("Не напоминать").tag(0)
+                        ForEach(LessonReminders.choices, id: \.self) { minutes in
+                            Text("За \(minutes) мин").tag(minutes)
+                        }
+                    }
+                } header: {
+                    Text("Напоминания")
+                } footer: {
+                    if model.notificationsDenied {
+                        Text("Уведомления запрещены. Разрешите их: Настройки iOS → Уведомления → Расписание УрФУ.")
+                            .foregroundStyle(.red)
+                    } else {
+                        Text("Напоминания ставятся на две недели вперёд и обновляются, когда вы открываете приложение. Учитывается выбранная подгруппа.")
+                    }
+                }
+
+                Section {
                     if model.widgetLinkWorks {
                         Label("Связь с виджетом работает: виджеты берут группу и подгруппу из этих настроек.",
                               systemImage: "checkmark.circle")
@@ -34,7 +52,7 @@ struct SettingsView: View {
                         Label("Связь с виджетом не работает (код \(SharedSettings.lastStatus.map { "\($0)" } ?? "—")). В виджетах: \(WidgetDefaults.groupName), \(WidgetDefaults.subgroup.map { "\($0) подгруппа" } ?? "все пары").",
                               systemImage: "exclamationmark.triangle")
                     }
-                    Label("Виджеты: «Ближайшая пара», «Кабинет» и «Пары на день». Есть версии для экрана блокировки.",
+                    Label("Экран блокировки: зажмите его → «Настроить» → «Экран блокировки» → поле под часами → «Расписание УрФУ». Круглый «Кабинет» во время пары показывает кольцо до её конца.",
                           systemImage: "lock.iphone")
                 } header: {
                     Text("Виджеты")

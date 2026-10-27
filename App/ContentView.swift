@@ -11,8 +11,17 @@ final class ScheduleViewModel: ObservableObject {
         didSet {
             ScheduleStore.subgroup = subgroup
             shareWithWidget()
+            updateReminders()
         }
     }
+    /// За сколько минут напоминать о паре; 0 — не напоминать.
+    @Published var reminderMinutes = LessonReminders.minutesBefore {
+        didSet {
+            LessonReminders.minutesBefore = reminderMinutes
+            updateReminders()
+        }
+    }
+    @Published private(set) var notificationsDenied = false
     private let api = ScheduleAPI()
     private var refreshID = UUID()
 
@@ -24,6 +33,15 @@ final class ScheduleViewModel: ObservableObject {
     /// Whether the widget can see these settings.
     var widgetLinkWorks: Bool {
         AppGroup.isShared || SharedSettings.load() == SharedSettings.Values(group: group, subgroup: subgroup)
+    }
+
+    private func updateReminders() {
+        let lessons = self.lessons
+        let minutes = reminderMinutes
+        Task {
+            await LessonReminders.reschedule(lessons, minutesBefore: minutes)
+            if minutes > 0 { notificationsDenied = !(await LessonReminders.requestAuthorization()) }
+        }
     }
 
     private func shareWithWidget() {
@@ -58,6 +76,7 @@ final class ScheduleViewModel: ObservableObject {
             snapshot = fresh
             ScheduleStore.save(fresh)
             WidgetCenter.shared.reloadAllTimelines()
+            updateReminders()
         } catch {
             guard refreshID == requestID else { return }
             self.error = error.localizedDescription

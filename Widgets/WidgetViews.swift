@@ -9,7 +9,7 @@ struct NextLessonView: View {
 
     var body: some View {
         content
-            .containerBackground(for: .widget) { WidgetBackdrop(color: entry.focus?.lessonKind.color ?? .blue) }
+            .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
     }
 
@@ -19,17 +19,7 @@ struct NextLessonView: View {
             case .accessoryInline:
                 Text("\(RU.time(lesson.startsAt)) · \(lesson.roomTitle) · \(lesson.subject)")
             case .accessoryRectangular:
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(StatusLine.title(for: lesson, at: entry.date)) · \(RU.timeRange(lesson))")
-                        .font(.caption2.weight(.semibold))
-                        .widgetAccentable()
-                    Text(lesson.subject)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text("Кабинет \(lesson.roomTitle)")
-                        .font(.caption)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                LockScreenLesson(lesson: lesson, date: entry.date)
             case .systemMedium:
                 medium(lesson)
             default:
@@ -69,7 +59,7 @@ struct NextLessonView: View {
                     .foregroundStyle(.secondary)
                 Text(lesson.roomTitle)
                     .font(.system(size: 42, weight: .heavy, design: .rounded))
-                    .foregroundStyle(lesson.lessonKind.color)
+                    .foregroundStyle(lesson.accent(at: entry.date))
                     .lineLimit(1)
                     .minimumScaleFactor(0.4)
                 Text(lesson.shortAddress)
@@ -117,7 +107,7 @@ struct RoomView: View {
 
     var body: some View {
         content
-            .containerBackground(for: .widget) { WidgetBackdrop(color: entry.focus?.lessonKind.color ?? .blue) }
+            .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
     }
 
@@ -125,21 +115,7 @@ struct RoomView: View {
         if entry.status == .ready, let lesson = entry.focus {
             switch family {
             case .accessoryCircular:
-                ZStack {
-                    AccessoryWidgetBackground()
-                    VStack(spacing: -1) {
-                        Text("каб.")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(lesson.roomTitle)
-                            .font(.system(size: 22, weight: .heavy, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.4)
-                            .widgetAccentable()
-                        Text(RU.time(lesson.startsAt))
-                            .font(.system(size: 9, weight: .medium))
-                    }
-                    .padding(.horizontal, 5)
-                }
+                RoomGauge(lesson: lesson, date: entry.date)
             case .accessoryRectangular:
                 HStack(spacing: 8) {
                     Text(lesson.roomTitle)
@@ -147,13 +123,7 @@ struct RoomView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.4)
                         .widgetAccentable()
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(RU.timeRange(lesson))
-                            .font(.caption.weight(.semibold))
-                        Text(lesson.subject)
-                            .font(.caption2)
-                            .lineLimit(2)
-                    }
+                    LockScreenTiming(lesson: lesson, date: entry.date)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             case .accessoryInline:
@@ -167,7 +137,7 @@ struct RoomView: View {
                         .foregroundStyle(.secondary)
                     Text(lesson.roomTitle)
                         .font(.system(size: 62, weight: .heavy, design: .rounded))
-                        .foregroundStyle(lesson.lessonKind.color)
+                        .foregroundStyle(lesson.accent(at: entry.date))
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
                     if !lesson.shortAddress.isEmpty {
@@ -189,6 +159,43 @@ struct RoomView: View {
     }
 }
 
+/// Круглый виджет экрана блокировки: номер кабинета, а во время пары — живое кольцо до её конца.
+private struct RoomGauge: View {
+    let lesson: Lesson
+    let date: Date
+
+    var body: some View {
+        if lesson.isOngoing(at: date) {
+            ProgressView(timerInterval: lesson.startsAt...lesson.endsAt, countsDown: true) {
+                EmptyView()
+            } currentValueLabel: {
+                roomLabel(caption: "до \(RU.time(lesson.endsAt))")
+            }
+            .progressViewStyle(.circular)
+            .widgetAccentable()
+        } else {
+            ZStack {
+                AccessoryWidgetBackground()
+                roomLabel(caption: RU.time(lesson.startsAt))
+            }
+        }
+    }
+
+    private func roomLabel(caption: String) -> some View {
+        VStack(spacing: -1) {
+            Text(lesson.roomTitle)
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+            Text(caption)
+                .font(.system(size: 9, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 6)
+    }
+}
+
 // MARK: - Пары на день
 
 struct DayView: View {
@@ -199,7 +206,7 @@ struct DayView: View {
 
     var body: some View {
         content
-            .containerBackground(for: .widget) { WidgetBackdrop(color: .blue) }
+            .containerBackground(for: .widget) { WidgetBackdrop(entry: entry) }
             .environment(\.locale, RU.locale)
     }
 
@@ -222,6 +229,11 @@ struct DayView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(RU.shortDay(agenda.day, now: entry.date))
                             .font(.headline)
+                        if let soon = entry.focus, soon.isSoon(at: entry.date) {
+                            Text("пора идти")
+                                .font(.caption.weight(.heavy))
+                                .foregroundStyle(.red)
+                        }
                         Spacer()
                         Text(entry.groupName)
                             .font(.caption.weight(.semibold))
@@ -251,9 +263,11 @@ private struct DayRow: View {
 
     var body: some View {
         let kind = lesson.lessonKind
+        let accent = lesson.accent(at: date)
+        let highlighted = lesson.isOngoing(at: date) || lesson.isSoon(at: date)
         HStack(spacing: 8) {
             Capsule()
-                .fill(kind.color)
+                .fill(accent)
                 .frame(width: 3, height: 26)
             VStack(alignment: .leading, spacing: 0) {
                 Text(lesson.isTimeUnspecified ? "—" : RU.time(lesson.startsAt))
@@ -285,8 +299,57 @@ private struct DayRow: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(lesson.isOngoing(at: date) ? kind.color.opacity(0.2) : Color.clear,
+        .background(highlighted ? accent.opacity(0.22) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+// MARK: - Экран блокировки
+
+/// Прямоугольный виджет экрана блокировки: что за пара и сколько осталось.
+private struct LockScreenLesson: View {
+    let lesson: Lesson
+    let date: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(StatusLine.title(for: lesson, at: date)) · каб. \(lesson.roomTitle)")
+                .font(.caption2.weight(.semibold))
+                .widgetAccentable()
+            Text(lesson.subject)
+                .font(.headline)
+                .lineLimit(1)
+            LockScreenTiming(lesson: lesson, date: date)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Время пары, а во время неё — живая полоса прогресса; перед парой — живой отсчёт.
+private struct LockScreenTiming: View {
+    let lesson: Lesson
+    let date: Date
+
+    var body: some View {
+        if lesson.isOngoing(at: date) {
+            ProgressView(timerInterval: lesson.startsAt...lesson.endsAt, countsDown: true) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .progressViewStyle(.linear)
+            .widgetAccentable()
+        } else if lesson.isSoon(at: date) {
+            HStack(spacing: 3) {
+                Text("через")
+                Text(timerInterval: date...lesson.startsAt, countsDown: true)
+                    .monospacedDigit()
+            }
+            .font(.caption.weight(.semibold))
+        } else {
+            Text(RU.timeRange(lesson))
+                .font(.caption)
+        }
     }
 }
 
@@ -298,12 +361,13 @@ struct StatusLine: View {
 
     static func title(for lesson: Lesson, at date: Date) -> String {
         if lesson.isOngoing(at: date) { return "СЕЙЧАС" }
+        if lesson.isSoon(at: date) { return "ПОРА ИДТИ" }
         if Calendar.current.isDate(lesson.startsAt, inSameDayAs: date) { return "ДАЛЕЕ" }
         return RU.shortDay(lesson.startsAt, now: date).uppercased(with: RU.locale)
     }
 
     var body: some View {
-        let color = lesson.lessonKind.color
+        let color = lesson.accent(at: date)
         HStack(spacing: 5) {
             Circle()
                 .fill(color)
@@ -313,14 +377,21 @@ struct StatusLine: View {
                 .foregroundStyle(color)
                 .lineLimit(1)
             Spacer(minLength: 4)
+            // Live countdowns: the system redraws them every second.
             if lesson.isOngoing(at: date) {
-                // Live countdown to the end of the pair; the system redraws it every second.
                 Text(timerInterval: lesson.startsAt...lesson.endsAt, countsDown: true)
                     .font(.caption2.weight(.semibold))
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 58, alignment: .trailing)
                     .foregroundStyle(.secondary)
+            } else if lesson.isSoon(at: date) {
+                Text(timerInterval: date...lesson.startsAt, countsDown: true)
+                    .font(.caption.weight(.heavy))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 52, alignment: .trailing)
+                    .foregroundStyle(.red)
             }
         }
     }
@@ -383,14 +454,28 @@ struct WidgetMessage: View {
     }
 }
 
+/// Фон виджета. За 15 минут до пары он краснеет, а во время пары по краю идёт кольцо,
+/// которое укорачивается к её концу (обновляется раз в пару минут).
 struct WidgetBackdrop: View {
-    let color: Color
+    let entry: ScheduleEntry
 
     var body: some View {
+        let lesson = entry.status == .ready ? entry.focus : nil
+        let soon = lesson?.isSoon(at: entry.date) ?? false
+        let color = lesson?.accent(at: entry.date) ?? .blue
         ZStack {
             Color(uiColor: .systemBackground)
-            LinearGradient(colors: [color.opacity(0.3), color.opacity(0.04)],
+            LinearGradient(colors: [color.opacity(soon ? 0.75 : 0.3), color.opacity(soon ? 0.35 : 0.04)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let lesson, lesson.isOngoing(at: entry.date) {
+                ContainerRelativeShape()
+                    .inset(by: 3)
+                    .stroke(color.opacity(0.18), lineWidth: 5)
+                ContainerRelativeShape()
+                    .inset(by: 3)
+                    .trim(from: 0, to: lesson.remainingFraction(at: entry.date))
+                    .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
         }
     }
 }
