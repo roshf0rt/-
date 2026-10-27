@@ -1,6 +1,6 @@
 name: UrFUSchedule
 options:
-  bundleIdPrefix: ru.example
+  bundleIdPrefix: ru.roshfort
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -18,10 +18,10 @@ targets:
       path: App/UrFUSchedule.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.ru.example.urfu.schedule
+          - group.ru.roshfort.urfu.schedule
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.example.UrFUSchedule
+        PRODUCT_BUNDLE_IDENTIFIER: ru.roshfort.UrFUSchedule
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Расписание УрФУ
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -38,7 +38,7 @@ targets:
       path: Widgets/ScheduleWidget.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.ru.example.urfu.schedule
+          - group.ru.roshfort.urfu.schedule
     info:
       path: Widgets/Info.plist
       properties:
@@ -47,5 +47,5 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ru.example.UrFUSchedule.ScheduleWidget
+        PRODUCT_BUNDLE_IDENTIFIER: ru.roshfort.UrFUSchedule.ScheduleWidget
         SKIP_INSTALL: YES

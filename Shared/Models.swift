@@ -25,7 +25,7 @@ struct ScheduleSnapshot: Codable {
 
 enum ScheduleStore {
     // This must match the App Group entitlement of both targets.
-    static let appGroup = "group.ru.example.urfu.schedule"
+    static let appGroup = "group.ru.roshfort.urfu.schedule"
     private static let snapshotKey = "schedule.snapshot.v1"
     private static let groupKey = "schedule.group.v1"
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }

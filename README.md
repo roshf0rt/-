@@ -5,7 +5,7 @@
 ## Запуск на Mac
 
 1. Установите Xcode и [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
-2. В `project.yml` замените `ru.example.UrFUSchedule` и идентификатор расширения на свои уникальные Bundle ID. Замените `group.ru.example.urfu.schedule` на свой App Group ID в `project.yml` и в `Shared/Models.swift`.
+2. В `project.yml` замените `ru.roshfort.UrFUSchedule` и идентификатор расширения на свои уникальные Bundle ID. Замените `group.ru.roshfort.urfu.schedule` на свой App Group ID в `project.yml` и в `Shared/Models.swift`.
 3. В папке проекта выполните `xcodegen generate` и откройте `UrFUSchedule.xcodeproj`.
 4. В Signing & Capabilities обоих targets выберите свою команду Apple и убедитесь, что одна и та же App Group включена для приложения и расширения. Для тестирования на устройстве возможности подписи зависят от вашей учётной записи Apple.
 5. Выберите iPhone или симулятор, запустите приложение и найдите группу. Затем добавьте «Расписание УрФУ» через редактор виджетов домашнего экрана или экрана блокировки.
