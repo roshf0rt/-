@@ -50,6 +50,8 @@ struct ScheduleProvider: TimelineProvider {
     }
 
     private static func entries(now: Date, allowNetwork: Bool) async -> [ScheduleEntry] {
+        // The theme may have changed in the app since the extension was launched.
+        AppTheme.current = AppTheme.stored
         guard let settings = await resolveSettings(allowNetwork: allowNetwork) else {
             return [ScheduleEntry(date: now, status: .noGroup, groupName: "", lessons: [])]
         }

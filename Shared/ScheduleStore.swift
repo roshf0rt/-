@@ -62,6 +62,7 @@ enum ProvisioningProfile {
 enum ScheduleStore {
     private static let groupKey = "schedule.group.v1"
     private static let subgroupKey = "schedule.subgroup.v1"
+    private static let themeKey = "schedule.theme.v1"
     private static var defaults: UserDefaults { AppGroup.defaults }
 
     private static func snapshotKey(_ groupID: String) -> String {
@@ -85,6 +86,11 @@ enum ScheduleStore {
             return value > 0 ? value : nil
         }
         set { defaults.set(newValue ?? 0, forKey: subgroupKey) }
+    }
+
+    static var theme: String? {
+        get { defaults.string(forKey: themeKey) }
+        set { defaults.set(newValue, forKey: themeKey) }
     }
 
     static func snapshot(for groupID: String) -> ScheduleSnapshot? {

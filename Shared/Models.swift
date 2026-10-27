@@ -55,6 +55,21 @@ extension Array where Element == Lesson {
         current(at: date) ?? next(after: date)
     }
 
+    /// Ближайшие пары, сгруппированные по дням, не больше `maxLessons`.
+    func upcomingDays(at date: Date, maxLessons: Int) -> [(day: Date, lessons: [Lesson])] {
+        let calendar = Calendar.current
+        var result: [(day: Date, lessons: [Lesson])] = []
+        for lesson in filter({ $0.endsAt > date }).prefix(maxLessons) {
+            let day = calendar.startOfDay(for: lesson.startsAt)
+            if let last = result.last, calendar.isDate(last.day, inSameDayAs: day) {
+                result[result.count - 1].lessons.append(lesson)
+            } else {
+                result.append((day, [lesson]))
+            }
+        }
+        return result
+    }
+
     /// Оставшиеся пары сегодня, а если их нет — пары ближайшего учебного дня.
     func agenda(at date: Date) -> (day: Date, lessons: [Lesson])? {
         let calendar = Calendar.current

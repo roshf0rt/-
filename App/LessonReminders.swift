@@ -6,8 +6,8 @@ import UserNotifications
 enum LessonReminders {
     static let choices = [5, 10, 15, 20, 30]
     private static let key = "reminders.minutesBefore.v1"
-    /// iOS keeps at most 64 pending notifications per app.
-    private static let limit = 60
+    /// iOS keeps at most 64 pending notifications per app; leave room for homework.
+    private static let limit = 50
 
     /// 0 — напоминания выключены.
     static var minutesBefore: Int {
@@ -26,7 +26,9 @@ enum LessonReminders {
 
     static func reschedule(_ lessons: [Lesson], minutesBefore: Int) async {
         let center = UNUserNotificationCenter.current()
-        center.removeAllPendingNotificationRequests()
+        // Only this kind: homework reminders are scheduled separately.
+        let pending = await center.pendingNotificationRequests()
+        center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix("lesson-") })
         guard minutesBefore > 0, await requestAuthorization() else { return }
 
         let lead = TimeInterval(minutesBefore * 60)

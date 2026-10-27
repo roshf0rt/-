@@ -31,17 +31,14 @@ struct NextLessonView: View {
     }
 
     private func small(_ lesson: Lesson) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            StatusLine(lesson: lesson, date: entry.date)
+        VStack(alignment: .leading, spacing: 3) {
+            StatusLine(lesson: lesson, date: entry.date, compact: true)
             Spacer(minLength: 0)
             Text(lesson.subject)
                 .font(.headline)
                 .lineLimit(3)
-                .minimumScaleFactor(0.8)
-            Text(RU.timeRange(lesson))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .minimumScaleFactor(0.7)
+            TimingLine(lesson: lesson, date: entry.date)
             HStack(spacing: 4) {
                 Image(systemName: "door.left.hand.open")
                 Text(lesson.roomTitle).fontWeight(.bold)
@@ -81,7 +78,7 @@ struct NextLessonView: View {
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                 HStack(spacing: 4) {
-                    Chip(lesson.lessonKind.title, color: lesson.lessonKind.color)
+                    Chip(lesson.lessonKind.title, color: lesson.tint)
                     if let subgroup = lesson.subgroup {
                         Chip("\(subgroup) подгр.", color: .mint)
                     }
@@ -129,14 +126,11 @@ struct RoomView: View {
             case .accessoryInline:
                 Text("Каб. \(lesson.roomTitle) · \(RU.time(lesson.startsAt))")
             default:
-                VStack(alignment: .leading, spacing: 0) {
-                    StatusLine(lesson: lesson, date: entry.date)
+                VStack(alignment: .leading, spacing: 1) {
+                    StatusLine(lesson: lesson, date: entry.date, compact: true)
                     Spacer(minLength: 0)
-                    Text("кабинет")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
                     Text(lesson.roomTitle)
-                        .font(.system(size: 62, weight: .heavy, design: .rounded))
+                        .font(.system(size: 58, weight: .heavy, design: .rounded))
                         .foregroundStyle(lesson.accent(at: entry.date))
                         .lineLimit(1)
                         .minimumScaleFactor(0.3)
@@ -146,10 +140,11 @@ struct RoomView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    Text("\(RU.time(lesson.startsAt)) · \(lesson.subject)")
+                    Text(lesson.subject)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
-                        .padding(.top, 3)
+                        .minimumScaleFactor(0.7)
+                    TimingLine(lesson: lesson, date: entry.date)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -202,7 +197,7 @@ struct DayView: View {
     @Environment(\.widgetFamily) private var family
     let entry: ScheduleEntry
 
-    private var maxRows: Int { family == .systemLarge ? 7 : 3 }
+    private let maxRows = 3
 
     var body: some View {
         content
@@ -224,6 +219,8 @@ struct DayView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } else if family == .systemLarge {
+                week
             } else {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline) {
@@ -254,6 +251,38 @@ struct DayView: View {
         } else {
             WidgetMessage(entry: entry)
         }
+    }
+}
+
+extension DayView {
+    /// Большой виджет: ближайшие пары на несколько дней вперёд.
+    fileprivate var week: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Расписание")
+                    .font(.headline)
+                if let soon = entry.focus, soon.isSoon(at: entry.date) {
+                    Text("пора идти")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(.red)
+                }
+                Spacer()
+                Text(entry.groupName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(entry.lessons.upcomingDays(at: entry.date, maxLessons: 7).enumerated()), id: \.offset) { _, day in
+                Text(RU.shortDay(day.day, now: entry.date).uppercased(with: RU.locale))
+                    .font(.caption2.weight(.heavy))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 3)
+                ForEach(day.lessons) { lesson in
+                    DayRow(lesson: lesson, date: entry.date)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -358,6 +387,8 @@ private struct LockScreenTiming: View {
 struct StatusLine: View {
     let lesson: Lesson
     let date: Date
+    /// Без отсчёта справа — для маленьких виджетов, где он не помещается.
+    var compact = false
 
     static func title(for lesson: Lesson, at date: Date) -> String {
         if lesson.isOngoing(at: date) { return "СЕЙЧАС" }
@@ -378,7 +409,9 @@ struct StatusLine: View {
                 .lineLimit(1)
             Spacer(minLength: 4)
             // Live countdowns: the system redraws them every second.
-            if lesson.isOngoing(at: date) {
+            if compact {
+                EmptyView()
+            } else if lesson.isOngoing(at: date) {
                 Text(timerInterval: lesson.startsAt...lesson.endsAt, countsDown: true)
                     .font(.caption2.weight(.semibold))
                     .monospacedDigit()
@@ -393,6 +426,37 @@ struct StatusLine: View {
                     .frame(width: 52, alignment: .trailing)
                     .foregroundStyle(.red)
             }
+        }
+    }
+}
+
+/// Время пары для маленьких виджетов: живой отсчёт до конца или до начала, иначе время.
+struct TimingLine: View {
+    let lesson: Lesson
+    let date: Date
+
+    var body: some View {
+        if lesson.isOngoing(at: date) {
+            HStack(spacing: 3) {
+                Text("ещё")
+                Text(timerInterval: lesson.startsAt...lesson.endsAt, countsDown: true)
+                    .monospacedDigit()
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        } else if lesson.isSoon(at: date) {
+            HStack(spacing: 3) {
+                Text("через")
+                Text(timerInterval: date...lesson.startsAt, countsDown: true)
+                    .monospacedDigit()
+            }
+            .font(.caption.weight(.heavy))
+            .foregroundStyle(.red)
+        } else {
+            Text(RU.timeRange(lesson))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
     }
 }

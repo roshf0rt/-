@@ -39,7 +39,7 @@ struct DayWidget: Widget {
             DayView(entry: entry)
         }
         .configurationDisplayName("Пары на день")
-        .description("Оставшиеся пары на сегодня, а вечером — на следующий учебный день.")
+        .description("Средний — пары на сегодня или следующий учебный день. Большой — на несколько дней вперёд.")
         .supportedFamilies([.systemMedium, .systemLarge, .accessoryRectangular])
     }
 }

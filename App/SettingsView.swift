@@ -26,6 +26,21 @@ struct SettingsView: View {
                          : "В загруженном расписании номера подгрупп не найдены. Если на сайте они есть, откройте «Ответ сервера» ниже и пришлите текст разработчику.")
                 }
 
+                Section("Оформление") {
+                    Picker("Цвет", selection: $model.theme) {
+                        ForEach(AppTheme.allCases) { theme in
+                            Label {
+                                Text(theme.title)
+                            } icon: {
+                                Image(systemName: theme == .byKind ? "circle.hexagongrid.fill" : "circle.fill")
+                                    .foregroundStyle(theme.color)
+                            }
+                            .tag(theme)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                }
+
                 Section {
                     Picker("Напомнить о паре", selection: $model.reminderMinutes) {
                         Text("Не напоминать").tag(0)

@@ -22,6 +22,13 @@ final class ScheduleViewModel: ObservableObject {
         }
     }
     @Published private(set) var notificationsDenied = false
+    @Published var theme = AppTheme.current {
+        didSet {
+            AppTheme.current = theme
+            ScheduleStore.theme = theme.rawValue
+            shareWithWidget()
+        }
+    }
     private let api = ScheduleAPI()
     private var refreshID = UUID()
 
@@ -32,7 +39,7 @@ final class ScheduleViewModel: ObservableObject {
 
     /// Whether the widget can see these settings.
     var widgetLinkWorks: Bool {
-        AppGroup.isShared || SharedSettings.load() == SharedSettings.Values(group: group, subgroup: subgroup)
+        AppGroup.isShared || SharedSettings.load() == sharedValues
     }
 
     private func updateReminders() {
@@ -44,8 +51,12 @@ final class ScheduleViewModel: ObservableObject {
         }
     }
 
+    private var sharedValues: SharedSettings.Values {
+        SharedSettings.Values(group: group, subgroup: subgroup, theme: theme.rawValue)
+    }
+
     private func shareWithWidget() {
-        SharedSettings.save(SharedSettings.Values(group: group, subgroup: subgroup))
+        SharedSettings.save(sharedValues)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -86,6 +97,7 @@ final class ScheduleViewModel: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var model = ScheduleViewModel()
+    @StateObject private var notes = NotesStore()
     @State private var choosingGroup = false
     @State private var showingSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -103,7 +115,7 @@ struct ContentView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    ScheduleList(model: model)
+                    ScheduleList(model: model, notes: notes)
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -135,6 +147,8 @@ struct ContentView: View {
 
 private struct ScheduleList: View {
     @ObservedObject var model: ScheduleViewModel
+    @ObservedObject var notes: NotesStore
+    @State private var editing: Lesson?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -159,6 +173,8 @@ private struct ScheduleList: View {
                         FocusCard(lesson: focus, now: now)
                     }
 
+                    HomeworkSection(store: notes) { editing = $0 }
+
                     if model.loading && model.snapshot == nil {
                         ProgressView("Загружаем расписание")
                             .frame(maxWidth: .infinity)
@@ -174,7 +190,9 @@ private struct ScheduleList: View {
                             .padding(.top, 12)
                             .padding(.horizontal, 4)
                         ForEach(days[day] ?? []) { lesson in
-                            LessonCard(lesson: lesson, now: now)
+                            LessonCard(lesson: lesson, now: now, note: notes.note(for: lesson))
+                                .contentShape(Rectangle())
+                                .onTapGesture { editing = lesson }
                         }
                     }
 
@@ -190,6 +208,9 @@ private struct ScheduleList: View {
                 .padding(.bottom, 16)
             }
             .refreshable { await model.refresh() }
+            .sheet(item: $editing) { lesson in
+                NoteEditor(lesson: lesson, store: notes)
+            }
         }
     }
 }
@@ -213,7 +234,7 @@ private struct FocusCard: View {
     let now: Date
 
     private var isCurrent: Bool { lesson.isOngoing(at: now) }
-    private var color: Color { lesson.lessonKind.color }
+    private var color: Color { lesson.tint }
 
     private var details: String {
         var parts = [lesson.lessonKind.title]
@@ -288,6 +309,8 @@ private struct LessonCard: View {
     let lesson: Lesson
     let now: Date
 
+    var note: LessonNote?
+
     private var isCurrent: Bool { lesson.isOngoing(at: now) }
     private var kind: LessonKind { lesson.lessonKind }
 
@@ -310,7 +333,7 @@ private struct LessonCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 6) {
-                    Chip(kind.title, color: kind.color)
+                    Chip(kind.title, color: lesson.tint)
                     if let subgroup = lesson.subgroup {
                         Chip("\(subgroup) подгруппа", color: .mint)
                     }
@@ -319,6 +342,9 @@ private struct LessonCard: View {
                     }
                     if isCurrent {
                         Chip("Идёт сейчас", color: .green)
+                    }
+                    if let note, note.isHomework {
+                        Chip(note.isDone ? "ДЗ готово" : "ДЗ", color: note.isDone ? .green : .red)
                     }
                 }
 
@@ -339,10 +365,17 @@ private struct LessonCard: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+
+                if let note {
+                    Label(note.text, systemImage: note.isHomework ? "book.closed" : "note.text")
+                        .font(.subheadline)
+                        .foregroundStyle(note.isHomework && !note.isDone ? lesson.tint : .secondary)
+                        .lineLimit(2)
+                }
             }
             .padding(.leading, 12)
             .overlay(alignment: .leading) {
-                Capsule().fill(kind.color).frame(width: 4)
+                Capsule().fill(lesson.tint).frame(width: 4)
             }
 
             Spacer(minLength: 0)

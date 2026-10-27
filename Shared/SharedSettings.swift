@@ -8,6 +8,7 @@ enum SharedSettings {
     struct Values: Codable, Equatable {
         var group: ScheduleGroup?
         var subgroup: Int?
+        var theme: String?
     }
 
     private static let service = "ru.roshfort.urfu.settings"

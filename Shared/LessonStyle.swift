@@ -131,7 +131,7 @@ extension Lesson {
 
     /// Красный, когда пора идти, иначе цвет типа занятия.
     func accent(at date: Date) -> Color {
-        isSoon(at: date) ? .red : lessonKind.color
+        isSoon(at: date) ? .red : tint
     }
 
     /// Сколько пары осталось: 1 — только началась, 0 — закончилась.
