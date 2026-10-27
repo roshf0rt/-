@@ -1,12 +1,16 @@
-# Общее ДЗ: API и Caddy с бесплатным HTTPS-сертификатом для $DOMAIN.
+# Общее ДЗ. API слушает только 127.0.0.1:8100. Если на сервере уже есть Caddy,
+# install.sh добавляет в него адрес для ДЗ; иначе запускает свой Caddy (профиль own-proxy).
 services:
   api:
     build: .
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8000"
     volumes:
       - ./data:/data
   caddy:
     image: caddy:2.8.4
+    profiles: [own-proxy]
     restart: unless-stopped
     depends_on: [api]
     ports:

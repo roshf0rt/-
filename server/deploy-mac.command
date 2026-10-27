@@ -14,8 +14,7 @@ echo
 ssh -o StrictHostKeyChecking=accept-new "$USER_NAME@$HOST" 'bash -s' <<'URFU_DEPLOY'
 #!/usr/bin/env bash
 # Всё для сервера общего ДЗ в одном файле: вставьте целиком в SSH-терминал (под root).
-# Ставит сервис в /opt/urfu-homework. Онлайн-кинотеатр и другие сервисы не трогает:
-# если порты 80/443 заняты, скрипт остановится и ничего не изменит.
+# Ставит сервис в /opt/urfu-homework и не мешает другим сервисам на сервере.
 set -euo pipefail
 SRC=$(mktemp -d)
 cd "$SRC"
@@ -288,15 +287,19 @@ cat > Caddyfile <<'URFU_EOF'
 }
 URFU_EOF
 cat > docker-compose.yml <<'URFU_EOF'
-# Общее ДЗ: API и Caddy с бесплатным HTTPS-сертификатом для $DOMAIN.
+# Общее ДЗ. API слушает только 127.0.0.1:8100. Если на сервере уже есть Caddy,
+# install.sh добавляет в него адрес для ДЗ; иначе запускает свой Caddy (профиль own-proxy).
 services:
   api:
     build: .
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8000"
     volumes:
       - ./data:/data
   caddy:
     image: caddy:2.8.4
+    profiles: [own-proxy]
     restart: unless-stopped
     depends_on: [api]
     ports:
@@ -314,8 +317,9 @@ volumes:
 URFU_EOF
 cat > install.sh <<'URFU_EOF'
 #!/usr/bin/env bash
-# Ставит сервис общего ДЗ в /opt/urfu-homework. Запускать от root в папке server/.
-# Другие сервисы на сервере не трогает: если порты 80/443 заняты, останавливается.
+# Ставит сервис общего ДЗ в /opt/urfu-homework. Запускать от root.
+# Если порты 80/443 держит Caddy, установленный на сервере (например, для кинотеатра),
+# в его конфиг добавляется отдельный адрес для ДЗ — с резервной копией и проверкой.
 set -euo pipefail
 
 TARGET=/opt/urfu-homework
@@ -328,17 +332,43 @@ if ! command -v docker >/dev/null; then
 fi
 
 busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' | grep -v docker-proxy || true)
-if [ -n "$busy" ] && ! docker compose -f "$TARGET/docker-compose.yml" ps -q caddy 2>/dev/null | grep -q .; then
-  echo "Порты 80/443 заняты другим сервисом, ничего не меняю:"
+if [ -z "$busy" ]; then
+  MODE=own-proxy
+elif echo "$busy" | grep -q '"caddy"' && systemctl is-active --quiet caddy; then
+  MODE=host-caddy
+else
+  echo "Порты 80/443 заняты, и это не Caddy из systemd — ничего не меняю:"
   echo "$busy"
   exit 1
 fi
+echo "Режим: $MODE, адрес: https://$DOMAIN"
 
 mkdir -p "$TARGET/data"
 cp app.py requirements.txt Dockerfile Caddyfile docker-compose.yml "$TARGET/"
 echo "DOMAIN=$DOMAIN" > "$TARGET/.env"
 cd "$TARGET"
-docker compose up -d --build
+
+if [ "$MODE" = own-proxy ]; then
+  docker compose --profile own-proxy up -d --build
+else
+  docker compose up -d --build api
+  CADDYFILE=$(systemctl cat caddy | grep -oP -- '--config \K\S+' | head -1 || true)
+  CADDYFILE=${CADDYFILE:-/etc/caddy/Caddyfile}
+  if grep -q "$DOMAIN" "$CADDYFILE"; then
+    echo "Адрес $DOMAIN уже есть в $CADDYFILE"
+  else
+    BACKUP="$CADDYFILE.bak-urfu-$(date +%Y%m%d%H%M%S)"
+    cp "$CADDYFILE" "$BACKUP"
+    printf '\n# Общее ДЗ (urfu-homework)\n%s {\n\tencode gzip\n\treverse_proxy 127.0.0.1:8100\n}\n' "$DOMAIN" >> "$CADDYFILE"
+    if ! caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1; then
+      cp "$BACKUP" "$CADDYFILE"
+      echo "Конфиг Caddy не прошёл проверку, вернул как было ($BACKUP). Кинотеатр не затронут."
+      exit 1
+    fi
+    systemctl reload caddy
+    echo "Добавил $DOMAIN в $CADDYFILE (копия: $BACKUP)"
+  fi
+fi
 
 echo "Жду сертификат для https://$DOMAIN …"
 for _ in $(seq 1 30); do
@@ -348,7 +378,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 5
 done
-echo "Сервис запущен, но HTTPS пока не отвечает. Логи: docker compose -f $TARGET/docker-compose.yml logs caddy"
+echo "Сервис запущен, но HTTPS пока не отвечает. Проверьте: curl -s http://127.0.0.1:8100/v1/health и journalctl -u caddy -n 50"
 exit 1
 URFU_EOF
 chmod +x install.sh
@@ -356,4 +386,4 @@ chmod +x install.sh
 URFU_DEPLOY
 
 echo
-read -r -p "Готово. Нажмите Enter, чтобы закрыть."
+read -r -p "Нажмите Enter, чтобы закрыть."
