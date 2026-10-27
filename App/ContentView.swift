@@ -108,6 +108,7 @@ final class ScheduleViewModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var model = ScheduleViewModel()
     @StateObject private var notes = NotesStore()
+    @StateObject private var community = CommunityStore()
     @State private var choosingGroup = false
     @State private var showingSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -125,7 +126,7 @@ struct ContentView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    ScheduleList(model: model, notes: notes)
+                    ScheduleList(model: model, notes: notes, community: community)
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -144,11 +145,19 @@ struct ContentView: View {
                 GroupPicker { group in Task { await model.select(group) } }
             }
             .sheet(isPresented: $showingSettings) {
-                SettingsView(model: model)
+                SettingsView(model: model, community: community)
             }
-            .task { await model.refresh() }
+            .task {
+                await model.refresh()
+                await community.refresh(group: model.group)
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await model.refresh() } }
+                if phase == .active {
+                    Task {
+                        await model.refresh()
+                        await community.refresh(group: model.group)
+                    }
+                }
             }
         }
         .environment(\.locale, RU.locale)
@@ -158,6 +167,7 @@ struct ContentView: View {
 private struct ScheduleList: View {
     @ObservedObject var model: ScheduleViewModel
     @ObservedObject var notes: NotesStore
+    @ObservedObject var community: CommunityStore
     @State private var editing: Lesson?
 
     var body: some View {
@@ -185,7 +195,7 @@ private struct ScheduleList: View {
                         FocusCard(lesson: focus, now: now)
                     }
 
-                    HomeworkSection(store: notes) { editing = $0 }
+                    HomeworkSection(store: notes, community: community, lessons: model.lessons) { editing = $0 }
 
                     if model.loading && model.snapshot == nil {
                         ProgressView("Загружаем расписание")
@@ -202,7 +212,8 @@ private struct ScheduleList: View {
                             .padding(.top, 12)
                             .padding(.horizontal, 4)
                         ForEach(days[day] ?? []) { lesson in
-                            LessonCard(lesson: lesson, now: now, note: notes.note(for: lesson))
+                            LessonCard(lesson: lesson, now: now, note: notes.note(for: lesson),
+                                       sharedCount: community.sharedHomework(for: lesson).filter { !$0.mine }.count)
                                 .contentShape(Rectangle())
                                 .onTapGesture { editing = lesson }
                         }
@@ -224,11 +235,12 @@ private struct ScheduleList: View {
             // A refresh that ends almost at once can leave the indicator stuck.
             let started = Date()
             await model.refresh()
+            await community.refresh(group: model.group)
             let remaining = 0.7 - Date().timeIntervalSince(started)
             if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
         }
         .sheet(item: $editing) { lesson in
-            NoteEditor(lesson: lesson, schedule: model.lessons, store: notes)
+            NoteEditor(lesson: lesson, schedule: model.lessons, store: notes, community: community, group: model.group)
         }
     }
 }
@@ -328,6 +340,7 @@ private struct LessonCard: View {
     let now: Date
 
     var note: LessonNote?
+    var sharedCount = 0
 
     private var isCurrent: Bool { lesson.isOngoing(at: now) }
     private var kind: LessonKind { lesson.lessonKind }
@@ -363,6 +376,9 @@ private struct LessonCard: View {
                     }
                     if let note, note.isHomework {
                         Chip(note.isDone ? "ДЗ готово" : "ДЗ", color: note.isDone ? .green : .red)
+                    }
+                    if sharedCount > 0 {
+                        Chip("ДЗ группы: \(sharedCount)", color: .purple)
                     }
                 }
 

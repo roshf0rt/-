@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: ScheduleViewModel
+    @ObservedObject var community: CommunityStore
     @Environment(\.dismiss) private var dismiss
     @State private var choosingGroup = false
 
@@ -40,6 +41,8 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.navigationLink)
                 }
+
+                CommunitySection(community: community, group: model.group)
 
                 LocationSection(enabled: $model.useLocation)
 

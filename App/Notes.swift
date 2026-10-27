@@ -116,18 +116,27 @@ final class NotesStore: ObservableObject {
 
 struct NoteEditor: View {
     @ObservedObject var store: NotesStore
+    @ObservedObject var community: CommunityStore
     @Environment(\.dismiss) private var dismiss
     @State private var note: LessonNote
+    @State private var shareScope: ShareScope
+    @State private var nickname = ""
+    private let group: ScheduleGroup?
     /// Занятие, к которому относится ДЗ.
     @State private var targetID: String
     private let isNew: Bool
     /// Эта пара, если она ещё не началась, и следующие занятия по тому же предмету.
     private let candidates: [Lesson]
 
-    init(lesson: Lesson, schedule: [Lesson], store: NotesStore) {
+    init(lesson: Lesson, schedule: [Lesson], store: NotesStore, community: CommunityStore, group: ScheduleGroup?) {
         self.store = store
+        self.community = community
+        self.group = group
         let existing = store.note(for: lesson)
         isNew = existing == nil
+        // New notes share like last time; re-saving an old note does not post it again.
+        let lastScope = UserDefaults.standard.string(forKey: Self.lastScopeKey).flatMap(ShareScope.init(rawValue:))
+        _shareScope = State(initialValue: existing == nil ? (lastScope ?? .none) : .none)
         _note = State(initialValue: existing ?? LessonNote(lesson: lesson, text: "", isHomework: false,
                                                            isDone: false, reminder: .none))
         let later = schedule.filter {
@@ -155,6 +164,16 @@ struct NoteEditor: View {
                         .lineLimit(4...12)
                 }
 
+                let shared = community.sharedHomework(for: note.lesson)
+                if !shared.isEmpty {
+                    Section("ДЗ от одногруппников") {
+                        SharedHomeworkList(community: community, items: shared) { item in
+                            note.text = note.text.isEmpty ? item.text : note.text + "\n" + item.text
+                            note.isHomework = true
+                        }
+                    }
+                }
+
                 Section {
                     Toggle("Домашнее задание", isOn: $note.isHomework)
                     if note.isHomework {
@@ -177,6 +196,28 @@ struct NoteEditor: View {
                         Text("Следующего занятия по этому предмету в ближайшие две недели нет, ДЗ останется у этой пары.")
                     } else if note.isHomework {
                         Text("ДЗ появится у выбранного занятия, и напоминание сработает относительно него.")
+                    }
+                }
+
+                if note.isHomework {
+                    Section {
+                        Picker("Поделиться", selection: $shareScope) {
+                            ForEach(ShareScope.allCases) { scope in
+                                Text(scope.title).tag(scope)
+                            }
+                        }
+                        if shareScope != .none && !community.hasProfile {
+                            TextField("Ваш ник для общего ДЗ", text: $nickname)
+                                .autocorrectionDisabled()
+                        }
+                    } header: {
+                        Text("Общее ДЗ")
+                    } footer: {
+                        if shareScope == .stream && community.stream.isEmpty {
+                            Text("Группы потока не выбраны — добавьте их в настройках. Пока ДЗ увидит только ваша группа.")
+                        } else if shareScope != .none {
+                            Text("Запись увидят с вашим ником; удалить её можно здесь же.")
+                        }
                     }
                 }
 
@@ -209,12 +250,32 @@ struct NoteEditor: View {
         return "\(label), \(RU.time(lesson.startsAt)) · \(lesson.lessonKind.title.lowercased(with: RU.locale))"
     }
 
+    private static let lastScopeKey = "community.lastScope.v1"
+
     private func save() {
+        let text = note.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lesson = saveLocally()
+        guard note.isHomework, shareScope != .none, !text.isEmpty else { return }
+        UserDefaults.standard.set(shareScope.rawValue, forKey: Self.lastScopeKey)
+        let scope = shareScope
+        let name = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        let group = self.group
+        let community = self.community
+        Task {
+            if !community.hasProfile, let group, name.count >= 2 {
+                await community.saveProfile(nickname: name, group: group)
+            }
+            await community.share(text: text, lesson: lesson, scope: scope, group: group)
+        }
+    }
+
+    /// Saves the note and returns the pair it ended up attached to.
+    private func saveLocally() -> Lesson {
         guard note.isHomework,
               let target = candidates.first(where: { $0.id == targetID }),
               target.id != note.lesson.id else {
             store.save(note)
-            return
+            return note.lesson
         }
         var moved = note
         moved.lesson = target
@@ -224,17 +285,22 @@ struct NoteEditor: View {
         }
         if !isNew { store.delete(note) }
         store.save(moved)
+        return target
     }
 }
 
 /// Список невыполненного ДЗ над расписанием.
 struct HomeworkSection: View {
     @ObservedObject var store: NotesStore
+    @ObservedObject var community: CommunityStore
+    let lessons: [Lesson]
     let onOpen: (Lesson) -> Void
 
     var body: some View {
         let homework = store.openHomework
-        if !homework.isEmpty {
+        let recent = Date().addingTimeInterval(-2 * 60 * 60)
+        let shared = Array(community.visibleItems.filter { !$0.mine && $0.lessonStart > recent }.prefix(5))
+        if !homework.isEmpty || !shared.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Домашние задания", systemImage: "checklist")
                     .font(.headline)
@@ -259,6 +325,29 @@ struct HomeworkSection: View {
                         }
                     }
                     .buttonStyle(.plain)
+                }
+                if !shared.isEmpty {
+                    Label("От одногруппников", systemImage: "person.2")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.top, 4)
+                    ForEach(shared) { item in
+                        Button {
+                            if let lesson = lessons.first(where: { $0.shareKey == item.lessonKey }) { onOpen(lesson) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.text)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Text("\(item.subject) · \(RU.shortDay(item.lessonStart)) \(RU.time(item.lessonStart)) · \(item.author.nickname)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(14)

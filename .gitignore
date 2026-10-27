@@ -2,3 +2,7 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+server/__pycache__/
+server/data/
+.pytest_cache/
+server/.pytest_cache/
