@@ -8,16 +8,22 @@ enum AppGroup {
     /// Тогда заданный в коде идентификатор не разрешён, и приложение с виджетом
     /// получают разные хранилища. Поэтому берём группу из профиля подписи.
     static let id: String = {
+        if let shared = Entitlements.sharedAppGroup { return shared }
         let groups = provisionedGroups()
         return groups.first { $0.localizedCaseInsensitiveContains("urfu") } ?? groups.first ?? configuredID
     }()
 
-    /// Есть ли у приложения и виджета общая папка. Без профиля с App Group её нет.
-    static let isShared = !provisionedGroups().isEmpty
+    /// Есть ли у приложения и виджета общая папка. Программа установки может выдать
+    /// им разные группы, поэтому сверяем права обоих, если их удалось прочитать.
+    static let isShared: Bool = Entitlements.partnerKnown
+        ? Entitlements.sharedAppGroup != nil
+        : !provisionedGroups().isEmpty
 
     /// Откуда взят идентификатор — для экрана диагностики.
     static var source: String {
-        isShared ? "из профиля подписи" : "из кода (в профиле подписи групп нет)"
+        if Entitlements.sharedAppGroup != nil { return "общая с виджетом" }
+        if Entitlements.partnerKnown { return "у виджета другая или нет — общей папки нет" }
+        return isShared ? "из профиля подписи" : "из кода (в профиле подписи групп нет)"
     }
 
     static var defaults: UserDefaults {

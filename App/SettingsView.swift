@@ -82,6 +82,10 @@ struct SettingsView: View {
                     }
                     LabeledContent("App Group", value: AppGroup.id)
                         .font(.footnote)
+                    EntitlementRow(title: "Папки приложения", values: Entitlements.appGroups(Entitlements.own))
+                    EntitlementRow(title: "Папки виджета", values: Entitlements.appGroups(Entitlements.partner))
+                    EntitlementRow(title: "Keychain приложения", values: Entitlements.keychainGroups(Entitlements.own))
+                    EntitlementRow(title: "Keychain виджета", values: Entitlements.keychainGroups(Entitlements.partner))
                     Text("Группа взята \(AppGroup.source)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -149,6 +153,23 @@ private struct DiagnosticsView: View {
         .task {
             do { text = try await ScheduleAPI().rawSample(for: group) }
             catch { failed = true }
+        }
+    }
+}
+
+/// Строка диагностики со списком прав подписи.
+private struct EntitlementRow: View {
+    let title: String
+    let values: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.footnote)
+            Text(values.isEmpty ? "нет" : values.joined(separator: "\n"))
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
         }
     }
 }

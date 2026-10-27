@@ -15,7 +15,7 @@ enum SharedSettings {
     private static let account = "settings"
 
     static var accessGroup: String? {
-        ProvisioningProfile.teamPrefix.map { "\($0).ru.roshfort.urfu.shared" }
+        Entitlements.sharedKeychainGroup ?? ProvisioningProfile.teamPrefix.map { "\($0).ru.roshfort.urfu.shared" }
     }
 
     /// Результат последней записи — для экрана диагностики.
