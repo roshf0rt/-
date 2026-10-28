@@ -42,6 +42,12 @@ final class ScheduleViewModel: ObservableObject {
             syncCompanions()
         }
     }
+    @Published var liveActivityInIsland = LiveActivities.showsInIsland {
+        didSet {
+            LiveActivities.showsInIsland = liveActivityInIsland
+            syncCompanions()
+        }
+    }
     private let api = ScheduleAPI()
     private var refreshID = UUID()
 

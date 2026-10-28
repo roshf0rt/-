@@ -53,11 +53,14 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Живая карточка пары", isOn: $model.liveActivity)
+                    if model.liveActivity {
+                        Toggle("Показывать в Dynamic Island", isOn: $model.liveActivityInIsland)
+                    }
                 } header: {
                     Text("Экран блокировки и часы")
                 } footer: {
                     Text(LiveActivities.systemAllows
-                         ? "Текущая или следующая пара с живым отсчётом на экране блокировки, в Dynamic Island и в Smart Stack на Apple Watch. Появляется, когда вы открываете приложение в учебный день."
+                         ? "Текущая или следующая пара с живым отсчётом на экране блокировки, в Dynamic Island и в Smart Stack на Apple Watch. Появляется, когда вы открываете приложение в учебный день. Без Dynamic Island остров остаётся пустым: совсем убрать его iOS не даёт."
                          : "Живые активности выключены: Настройки iOS → Расписание УрФУ → Живые активности.")
                 }
 

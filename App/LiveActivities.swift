@@ -11,12 +11,18 @@ import Foundation
 enum LiveActivities {
     static let refreshTaskID = "ru.roshfort.urfu.refresh"
     private static let enabledKey = "liveActivityEnabled"
+    private static let islandKey = "liveActivityInIsland"
     /// A card is started only for a pair that begins within this time.
     private static let startWindow: TimeInterval = 6 * 60 * 60
 
     static var enabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+
+    static var showsInIsland: Bool {
+        get { UserDefaults.standard.object(forKey: islandKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: islandKey) }
     }
 
     static var systemAllows: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
@@ -83,7 +89,7 @@ enum LiveActivities {
             subject: focus.subject, kind: focus.kind, room: focus.room, address: focus.shortAddress,
             startsAt: focus.startsAt, endsAt: focus.endsAt,
             nextSubject: next?.subject, nextRoom: next?.room, nextStartsAt: next?.startsAt,
-            theme: theme.rawValue)
+            theme: theme.rawValue, showsInIsland: showsInIsland)
     }
 
     private static func boundary(after now: Date, in state: LessonActivityAttributes.ContentState) -> Date? {

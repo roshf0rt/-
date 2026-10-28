@@ -46,22 +46,28 @@ struct LessonLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Text(card.room)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(card.tint)
-                    .lineLimit(1)
+                if card.state.showsInIsland {
+                    Text(card.room)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(card.tint)
+                        .lineLimit(1)
+                }
             } compactTrailing: {
-                card.timer
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 48)
+                if card.state.showsInIsland {
+                    card.timer
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 48)
+                }
             } minimal: {
-                Text(card.room)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(card.tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                if card.state.showsInIsland {
+                    Text(card.room)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(card.tint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
             }
             .keylineTint(card.tint)
         }

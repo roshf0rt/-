@@ -15,6 +15,8 @@ struct LessonActivityAttributes: ActivityAttributes {
         var nextRoom: String?
         var nextStartsAt: Date?
         var theme: String
+        /// Off: the Dynamic Island stays empty and only the lock screen card shows the pair.
+        var showsInIsland: Bool
     }
 
     var groupName: String
