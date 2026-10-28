@@ -354,9 +354,15 @@ private struct LockScreenLesson: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("\(StatusLine.title(for: lesson, at: date, hurry: hurry)) · каб. \(lesson.roomTitle)")
-                .font(.caption2.weight(.semibold))
-                .widgetAccentable()
+            // The room comes first and never gives way; the status is cut instead.
+            HStack(spacing: 0) {
+                Text("каб. \(lesson.roomTitle)")
+                    .layoutPriority(1)
+                Text(" · \(StatusLine.title(for: lesson, at: date, hurry: hurry))")
+            }
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .widgetAccentable()
             Text(lesson.subject)
                 .font(.headline)
                 .lineLimit(1)
@@ -408,7 +414,7 @@ struct StatusLine: View {
     static func title(for lesson: Lesson, at date: Date, hurry: HurryInfo) -> String {
         if lesson.isOngoing(at: date) { return "СЕЙЧАС" }
         if hurry.isSoon(lesson, at: date) { return hurry.distance(to: lesson) == nil ? "ПОРА ИДТИ" : "ВЫХОДИ" }
-        if hurry.isSettled(lesson, at: date) { return "ТЫ НА МЕСТЕ" }
+        if hurry.isSettled(lesson, at: date) { return "НА МЕСТЕ" }
         if Calendar.current.isDate(lesson.startsAt, inSameDayAs: date) { return "ДАЛЕЕ" }
         return RU.shortDay(lesson.startsAt, now: date).uppercased(with: RU.locale)
     }
