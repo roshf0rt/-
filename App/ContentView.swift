@@ -35,6 +35,13 @@ final class ScheduleViewModel: ObservableObject {
             shareWithWidget()
         }
     }
+    /// Живая карточка пары на экране блокировки и на часах.
+    @Published var liveActivity = LiveActivities.enabled {
+        didSet {
+            LiveActivities.enabled = liveActivity
+            syncCompanions()
+        }
+    }
     private let api = ScheduleAPI()
     private var refreshID = UUID()
 
@@ -64,6 +71,16 @@ final class ScheduleViewModel: ObservableObject {
     private func shareWithWidget() {
         SharedSettings.save(sharedValues)
         WidgetCenter.shared.reloadAllTimelines()
+        syncCompanions()
+    }
+
+    /// The Live Activity and the watch app follow the same group, subgroup and colour.
+    func syncCompanions() {
+        let lessons = self.lessons
+        let theme = self.theme
+        WatchLink.shared.send(group: group, subgroup: subgroup, theme: theme.rawValue, lessons: lessons)
+        guard let name = group?.name else { return }
+        Task { await LiveActivities.sync(lessons: lessons, groupName: name, theme: theme, canStart: true) }
     }
 
     var lessons: [Lesson] { (snapshot?.lessons ?? []).visible(forSubgroup: subgroup) }
@@ -97,6 +114,7 @@ final class ScheduleViewModel: ObservableObject {
             ScheduleStore.save(fresh)
             WidgetCenter.shared.reloadAllTimelines()
             updateReminders()
+            syncCompanions()
         } catch {
             guard refreshID == requestID else { return }
             if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
@@ -153,6 +171,7 @@ struct ContentView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
+                    model.syncCompanions()
                     Task {
                         await model.refresh()
                         await community.refresh(group: model.group)

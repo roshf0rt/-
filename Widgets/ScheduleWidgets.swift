@@ -7,6 +7,7 @@ struct ScheduleWidgetBundle: WidgetBundle {
         NextLessonWidget()
         RoomWidget()
         DayWidget()
+        LessonLiveActivity()
     }
 }
 

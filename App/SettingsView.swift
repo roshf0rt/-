@@ -52,6 +52,16 @@ struct SettingsView: View {
                 LocationSection(enabled: $model.useLocation)
 
                 Section {
+                    Toggle("Живая карточка пары", isOn: $model.liveActivity)
+                } header: {
+                    Text("Экран блокировки и часы")
+                } footer: {
+                    Text(LiveActivities.systemAllows
+                         ? "Текущая или следующая пара с живым отсчётом на экране блокировки, в Dynamic Island и в Smart Stack на Apple Watch. Появляется, когда вы открываете приложение в учебный день."
+                         : "Живые активности выключены: Настройки iOS → Расписание УрФУ → Живые активности.")
+                }
+
+                Section {
                     Picker("Напомнить о паре", selection: $model.reminderMinutes) {
                         Text("Не напоминать").tag(0)
                         ForEach(LessonReminders.choices, id: \.self) { minutes in
