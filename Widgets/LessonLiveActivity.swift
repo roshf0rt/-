@@ -23,9 +23,8 @@ struct LessonLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        card.timer
+                        card.minutesLeft
                             .font(.title3.weight(.semibold))
-                            .monospacedDigit()
                             .multilineTextAlignment(.trailing)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -56,9 +55,8 @@ struct LessonLiveActivity: Widget {
                 }
             } compactTrailing: {
                 if card.state.showsInIsland {
-                    card.timer
+                    card.minutesLeft
                         .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
                         .multilineTextAlignment(.trailing)
                         .lineLimit(1)
                         .frame(maxWidth: 58)
@@ -100,9 +98,21 @@ private struct ActivityCard {
         }
     }
 
-    /// Less than 15 minutes to the pair: time to go.
+    /// The pair this card is counting down to, when it has not started yet.
+    var upcomingStart: Date? {
+        switch phase {
+        case .before: return state.startsAt
+        case .after: return state.nextStartsAt
+        case .during: return nil
+        }
+    }
+
+    /// Time to go: 15 minutes before the first pair of the day, 90 seconds before any other pair.
     var hurrying: Bool {
-        phase == .before && state.startsAt.timeIntervalSince(now) <= TimeInterval(Hurry.minutes * 60)
+        guard let start = upcomingStart, start > now else { return false }
+        let firstOfDay = phase == .before && state.previousEndsAt == nil
+        let lead = firstOfDay ? TimeInterval(Hurry.minutes * 60) : TimeInterval(Hurry.breakSeconds)
+        return start.timeIntervalSince(now) <= lead
     }
 
     var tint: Color {
@@ -122,19 +132,12 @@ private struct ActivityCard {
     }
 
     var status: String {
-        switch phase {
-        case .before where isBreak:
-            return "\(Mood.line(Mood.breakLines, on: now)) · \(RU.time(state.startsAt))"
-        case .before where hurrying:
-            return "\(Mood.line(Mood.goLines, on: now)) · \(RU.time(state.startsAt))"
-        case .before:
-            return "Первая пара в \(RU.time(state.startsAt))"
-        case .during:
-            return "Идёт до \(RU.time(state.endsAt))"
-        case .after:
-            if let next = state.nextStartsAt { return "\(Mood.line(Mood.breakLines, on: now)) · \(RU.time(next))" }
-            return "Свободны до завтра"
+        if let start = upcomingStart {
+            if hurrying { return "\(Mood.line(Mood.goLines, on: now)) · \(RU.time(start))" }
+            if phase == .before && !isBreak { return "Первая пара в \(RU.time(start))" }
+            return "\(Mood.line(Mood.breakLines, on: now)) · \(RU.time(start))"
         }
+        return phase == .during ? "Идёт до \(RU.time(state.endsAt))" : "Свободны до завтра"
     }
 
     var timerCaption: String {
@@ -156,6 +159,15 @@ private struct ActivityCard {
     @ViewBuilder var timer: some View {
         if let end = timerEnd {
             Text(timerInterval: now...end, countsDown: true)
+        } else {
+            Text("✓")
+        }
+    }
+
+    /// Minutes only, for the Dynamic Island: the system timer always shows seconds.
+    @ViewBuilder var minutesLeft: some View {
+        if let end = timerEnd {
+            Text(end, style: .relative)
         } else {
             Text("✓")
         }

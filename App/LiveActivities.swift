@@ -93,9 +93,12 @@ enum LiveActivities {
             previousEndsAt: previousEnd, theme: theme.rawValue, showsInIsland: showsInIsland)
     }
 
-    /// The next moment the card changes: a break starts or ends, the 15-minute hurry begins, or a pair starts or ends.
+    /// The next moment the card changes: a break starts or ends, the hurry begins, or a pair starts or ends.
     private static func boundary(after now: Date, in state: LessonActivityAttributes.ContentState) -> Date? {
-        let hurry = state.startsAt.addingTimeInterval(-TimeInterval(Hurry.minutes * 60))
-        return [state.previousEndsAt, hurry, state.startsAt, state.endsAt].compactMap { $0 }.filter { $0 > now }.min()
+        let firstOfDay = state.previousEndsAt == nil
+        let hurry = state.startsAt.addingTimeInterval(-TimeInterval(firstOfDay ? Hurry.minutes * 60 : Hurry.breakSeconds))
+        let nextHurry = state.nextStartsAt?.addingTimeInterval(-TimeInterval(Hurry.breakSeconds))
+        return [state.previousEndsAt, hurry, state.startsAt, state.endsAt, nextHurry, state.nextStartsAt]
+            .compactMap { $0 }.filter { $0 > now }.min()
     }
 }

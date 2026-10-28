@@ -121,6 +121,8 @@ struct Chip: View {
 /// За сколько минут до пары виджет краснеет.
 enum Hurry {
     static let minutes = 15
+    /// Between pairs, the card hurries only this close to the next one.
+    static let breakSeconds = 90
 }
 
 extension Lesson {
