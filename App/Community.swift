@@ -205,20 +205,34 @@ final class CommunityStore: ObservableObject {
         Array(Set(items.filter { !$0.mine }.map(\.author))).sorted { $0.nickname < $1.nickname }
     }
 
+    /// Runs a request in its own task. The view that started it may be cancelled (sheets,
+    /// pull to refresh, returning to the app); that must not cancel the request.
+    private func independent<T>(_ work: @escaping () async throws -> T) async throws -> T {
+        try await Task { try await work() }.value
+    }
+
+    /// A cancelled request is not an error worth showing.
+    private func report(_ error: Error, prefix: String? = nil) {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+        let text = error.localizedDescription
+        self.error = prefix.map { "\($0): \(text)" } ?? text
+    }
+
     func saveProfile(nickname: String, group: ScheduleGroup) async {
         let ref = CommunityAPI.GroupRef(id: group.id, name: group.name)
+        let api = self.api
         do {
             if let token {
-                user = try await api.updateProfile(token: token, nickname: nickname, group: ref)
+                user = try await independent { try await api.updateProfile(token: token, nickname: nickname, group: ref) }
             } else {
-                let result = try await api.register(nickname: nickname, group: ref)
+                let result = try await independent { try await api.register(nickname: nickname, group: ref) }
                 token = result.token
                 user = result.user
             }
             save(user, key: Keys.user)
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            report(error)
         }
     }
 
@@ -232,13 +246,12 @@ final class CommunityStore: ObservableObject {
             // Its own task: pull to refresh and returning to the app cancel the view's task,
             // and a cancelled request must not show up as "отменено".
             let api = self.api
-            let fresh = try await Task { try await api.homework(token: token, groups: [group.id]) }.value
+            let fresh = try await independent { try await api.homework(token: token, groups: [group.id]) }
             notifyAboutNew(in: fresh)
             items = fresh
             error = nil
         } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
-            self.error = error.localizedDescription
+            report(error)
         }
     }
 
@@ -250,21 +263,23 @@ final class CommunityStore: ObservableObject {
         }
         let draft = CommunityAPI.Draft(subject: lesson.subject, lessonStart: lesson.startsAt, text: text, audience: audience)
         do {
-            let created = try await api.create(token: token, draft: draft)
+            let api = self.api
+            let created = try await independent { try await api.create(token: token, draft: draft) }
             items.append(created)
             error = nil
         } catch {
-            self.error = "Не удалось поделиться ДЗ: \(error.localizedDescription)"
+            report(error, prefix: "Не удалось поделиться ДЗ")
         }
     }
 
     func delete(_ item: SharedHomework) async {
         guard let token else { return }
+        let api = self.api
         do {
-            try await api.delete(token: token, id: item.id)
+            try await independent { try await api.delete(token: token, id: item.id) }
             items.removeAll { $0.id == item.id }
         } catch {
-            self.error = error.localizedDescription
+            report(error)
         }
     }
 
