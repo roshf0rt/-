@@ -229,11 +229,15 @@ final class CommunityStore: ObservableObject {
             await saveProfile(nickname: user.nickname, group: group)
         }
         do {
-            let fresh = try await api.homework(token: token, groups: [group.id])
+            // Its own task: pull to refresh and returning to the app cancel the view's task,
+            // and a cancelled request must not show up as "отменено".
+            let api = self.api
+            let fresh = try await Task { try await api.homework(token: token, groups: [group.id]) }.value
             notifyAboutNew(in: fresh)
             items = fresh
             error = nil
         } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             self.error = error.localizedDescription
         }
     }
