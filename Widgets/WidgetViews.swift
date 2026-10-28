@@ -504,15 +504,28 @@ struct WidgetMessage: View {
         switch entry.status {
         case .noGroup: return "Откройте приложение и выберите группу"
         case .noData: return "Нет данных. Проверьте интернет или откройте приложение"
-        case .ready: return "Ближайших пар нет"
+        case .ready:
+            if let days = Mood.vacationDays(entry.lessons, now: entry.date) { return "Каникулы! До пар \(days) дн." }
+            if Mood.dayDone(entry.lessons, now: entry.date) { return Mood.line(Mood.dayDoneLines, on: entry.date) }
+            return "Ближайших пар нет"
         }
+    }
+
+    private var symbol: String {
+        guard entry.status == .ready else { return "calendar.badge.exclamationmark" }
+        if Mood.vacationDays(entry.lessons, now: entry.date) != nil { return "beach.umbrella.fill" }
+        if Mood.dayDone(entry.lessons, now: entry.date) { return "party.popper.fill" }
+        return "cup.and.saucer.fill"
     }
 
     private var shortText: String {
         switch entry.status {
         case .noGroup: return "Выберите группу"
         case .noData: return "Нет данных"
-        case .ready: return "Пар нет"
+        case .ready:
+            if Mood.vacationDays(entry.lessons, now: entry.date) != nil { return "Каникулы" }
+            if Mood.dayDone(entry.lessons, now: entry.date) { return "Пары кончились" }
+            return "Пар нет"
         }
     }
 
@@ -529,9 +542,9 @@ struct WidgetMessage: View {
             Text(shortText).font(.headline)
         default:
             VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: entry.status == .ready ? "cup.and.saucer.fill" : "calendar.badge.exclamationmark")
+                Image(systemName: symbol)
                     .font(.title2)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.orange)
                 Spacer(minLength: 0)
                 if !entry.groupName.isEmpty {
                     Text(entry.groupName)

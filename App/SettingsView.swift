@@ -65,6 +65,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Сообщать, когда пары кончились", isOn: $model.moodNotifications)
+                } footer: {
+                    Text("Коротко в конце последней пары дня. Перед каникулами вместо этого придёт сообщение про каникулы. Можно выключить.")
+                }
+
+                Section {
                     Picker("Напомнить о паре", selection: $model.reminderMinutes) {
                         Text("Не напоминать").tag(0)
                         ForEach(LessonReminders.choices, id: \.self) { minutes in

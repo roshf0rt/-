@@ -101,14 +101,14 @@ private struct ActivityCard {
     }
 
     var title: String {
-        phase == .after ? (state.nextSubject ?? "Пары на сегодня закончились") : state.subject
+        phase == .after ? (state.nextSubject ?? Mood.line(Mood.dayDoneLines, on: now)) : state.subject
     }
 
     var status: String {
         switch phase {
         case .before: return "Начало в \(RU.time(state.startsAt))"
         case .during: return "Идёт до \(RU.time(state.endsAt))"
-        case .after: return state.nextStartsAt.map { "Далее в \(RU.time($0))" } ?? "Всё на сегодня"
+        case .after: return state.nextStartsAt.map { "Далее в \(RU.time($0))" } ?? "Свободны до завтра"
         }
     }
 

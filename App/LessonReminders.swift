@@ -9,6 +9,14 @@ enum LessonReminders {
     /// iOS keeps at most 64 pending notifications per app; leave room for homework.
     private static let limit = 50
 
+    private static let moodKey = "reminders.moods.v1"
+
+    /// Сообщать, когда пары на день закончились, и о каникулах. По умолчанию выключено.
+    static var moodsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: moodKey) }
+        set { UserDefaults.standard.set(newValue, forKey: moodKey) }
+    }
+
     /// 0 — напоминания выключены.
     static var minutesBefore: Int {
         get { UserDefaults.standard.integer(forKey: key) }
@@ -46,6 +54,43 @@ enum LessonReminders {
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
             let request = UNNotificationRequest(identifier: "lesson-\(lesson.id)", content: content, trigger: trigger)
             try? await center.add(request)
+        }
+    }
+}
+
+extension LessonReminders {
+    /// One notification at the end of each day's last pair; before a break it becomes the holiday message.
+    static func rescheduleMoods(_ lessons: [Lesson], enabled: Bool) async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter {
+            $0.hasPrefix("dayend-") || $0.hasPrefix("vacation-")
+        })
+        guard enabled, await requestAuthorization() else { return }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let real = lessons.filter { !$0.isTimeUnspecified }
+        let days = Dictionary(grouping: real) { calendar.startOfDay(for: $0.startsAt) }
+        for (day, items) in days.sorted(by: { $0.key < $1.key }).prefix(14) {
+            guard let end = items.map(\.endsAt).max(), end > now else { continue }
+            let content = UNMutableNotificationContent()
+            content.sound = .default
+            let identifier: String
+            if let next = real.filter({ $0.startsAt > end }).map(\.startsAt).min(),
+               next.timeIntervalSince(end) >= Mood.vacationGap {
+                let dayCount = calendar.dateComponents([.day], from: end, to: next).day ?? 0
+                content.title = Mood.line(Mood.vacationLines, on: end)
+                content.body = "До первой пары \(dayCount) дн. Отдыхайте по полной"
+                identifier = "vacation-\(Int(day.timeIntervalSince1970))"
+            } else {
+                content.title = Mood.line(Mood.dayDoneLines, on: end)
+                content.body = "Последняя пара — \(items.first { $0.endsAt == end }?.subject ?? "на сегодня всё")"
+                identifier = "dayend-\(Int(day.timeIntervalSince1970))"
+            }
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: end)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            try? await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
         }
     }
 }

@@ -22,6 +22,13 @@ final class ScheduleViewModel: ObservableObject {
         }
     }
     @Published private(set) var notificationsDenied = false
+    /// Сообщение, когда пары закончились, и о каникулах.
+    @Published var moodNotifications = LessonReminders.moodsEnabled {
+        didSet {
+            LessonReminders.moodsEnabled = moodNotifications
+            updateReminders()
+        }
+    }
     @Published var useLocation = ScheduleStore.useLocation {
         didSet {
             ScheduleStore.useLocation = useLocation
@@ -66,6 +73,7 @@ final class ScheduleViewModel: ObservableObject {
         let minutes = reminderMinutes
         Task {
             await LessonReminders.reschedule(lessons, minutesBefore: minutes)
+            await LessonReminders.rescheduleMoods(lessons, enabled: moodNotifications)
             if minutes > 0 { notificationsDenied = !(await LessonReminders.requestAuthorization()) }
         }
     }
@@ -189,6 +197,36 @@ struct ContentView: View {
     }
 }
 
+/// Пары кончились или каникулы — вместо пустого места.
+private struct MoodCard: View {
+    let lessons: [Lesson]
+    let now: Date
+
+    var body: some View {
+        if let days = Mood.vacationDays(lessons, now: now) {
+            card(Mood.line(Mood.vacationLines, on: now), detail: "До первой пары \(days) дн.", symbol: "beach.umbrella.fill")
+        } else if Mood.dayDone(lessons, now: now) {
+            card(Mood.line(Mood.dayDoneLines, on: now), detail: "Свободны до завтра", symbol: "party.popper.fill")
+        }
+    }
+
+    private func card(_ title: String, detail: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title)
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
 private struct ScheduleList: View {
     @ObservedObject var model: ScheduleViewModel
     @ObservedObject var notes: NotesStore
@@ -218,6 +256,8 @@ private struct ScheduleList: View {
 
                     if let focus = upcoming.focus(at: now) {
                         FocusCard(lesson: focus, now: now)
+                    } else {
+                        MoodCard(lessons: model.lessons, now: now)
                     }
 
                     HomeworkSection(store: notes, community: community, lessons: model.lessons) { editing = $0 }
