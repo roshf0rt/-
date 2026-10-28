@@ -85,14 +85,17 @@ enum LiveActivities {
         let today = lessons.filter { !$0.isTimeUnspecified && calendar.isDate($0.startsAt, inSameDayAs: now) }
         guard let focus = today.focus(at: now), focus.startsAt.timeIntervalSince(now) < startWindow else { return nil }
         let next = today.next(after: focus.startsAt)
+        let previousEnd = today.filter { $0.endsAt <= focus.startsAt }.map(\.endsAt).max()
         return LessonActivityAttributes.ContentState(
             subject: focus.subject, kind: focus.kind, room: focus.room, address: focus.shortAddress,
             startsAt: focus.startsAt, endsAt: focus.endsAt,
             nextSubject: next?.subject, nextRoom: next?.room, nextStartsAt: next?.startsAt,
-            theme: theme.rawValue, showsInIsland: showsInIsland)
+            previousEndsAt: previousEnd, theme: theme.rawValue, showsInIsland: showsInIsland)
     }
 
+    /// The next moment the card changes: a break starts or ends, the 15-minute hurry begins, or a pair starts or ends.
     private static func boundary(after now: Date, in state: LessonActivityAttributes.ContentState) -> Date? {
-        [state.startsAt, state.endsAt].first { $0 > now }
+        let hurry = state.startsAt.addingTimeInterval(-TimeInterval(Hurry.minutes * 60))
+        return [state.previousEndsAt, hurry, state.startsAt, state.endsAt].compactMap { $0 }.filter { $0 > now }.min()
     }
 }

@@ -14,6 +14,8 @@ struct LessonActivityAttributes: ActivityAttributes {
         var nextSubject: String?
         var nextRoom: String?
         var nextStartsAt: Date?
+        /// End of the last pair that finished before this one: between the two is a break.
+        var previousEndsAt: Date?
         var theme: String
         /// Off: the Dynamic Island stays empty and only the lock screen card shows the pair.
         var showsInIsland: Bool

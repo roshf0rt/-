@@ -14,27 +14,28 @@ struct LessonLiveActivity: Widget {
             let card = ActivityCard(state: context.state)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("каб.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text(card.room)
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(card.tint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.5)
-                    }
+                    Text(card.room)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(card.tint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        Text(card.timerCaption)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                         card.timer
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                             .multilineTextAlignment(.trailing)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        Text(card.timerCaption)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
+                    .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -44,6 +45,7 @@ struct LessonLiveActivity: Widget {
                             .minimumScaleFactor(0.7)
                         card.progress
                     }
+                    .padding(.horizontal, 6)
                 }
             } compactLeading: {
                 if card.state.showsInIsland {
@@ -55,10 +57,11 @@ struct LessonLiveActivity: Widget {
             } compactTrailing: {
                 if card.state.showsInIsland {
                     card.timer
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                         .monospacedDigit()
                         .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 48)
+                        .lineLimit(1)
+                        .frame(maxWidth: 58)
                 }
             } minimal: {
                 if card.state.showsInIsland {
@@ -74,8 +77,8 @@ struct LessonLiveActivity: Widget {
     }
 }
 
-/// What the card shows at the moment it is drawn. The system redraws it at the start and
-/// at the end of the pair (the stale date), so the phase follows the clock without updates.
+/// What the card shows at the moment it is drawn. The system redraws it at each boundary
+/// (the stale date), so the phase follows the clock without push updates.
 private struct ActivityCard {
     enum Phase { case before, during, after }
 
@@ -88,9 +91,23 @@ private struct ActivityCard {
         return .after
     }
 
+    /// Between two pairs: the last one is over and the next one has not started.
+    var isBreak: Bool {
+        switch phase {
+        case .before: return state.previousEndsAt.map { now >= $0 } ?? false
+        case .after: return state.nextStartsAt != nil
+        case .during: return false
+        }
+    }
+
+    /// Less than 15 minutes to the pair: time to go.
+    var hurrying: Bool {
+        phase == .before && state.startsAt.timeIntervalSince(now) <= TimeInterval(Hurry.minutes * 60)
+    }
+
     var tint: Color {
         let theme = AppTheme(rawValue: state.theme) ?? .byKind
-        if phase == .before && state.startsAt.timeIntervalSince(now) <= TimeInterval(Hurry.minutes * 60) { return .red }
+        if hurrying { return .red }
         return theme == .byKind ? LessonKind(state.kind).color : theme.color
     }
 
@@ -106,14 +123,26 @@ private struct ActivityCard {
 
     var status: String {
         switch phase {
-        case .before: return "\(Mood.line(Mood.goLines, on: now)) · \(RU.time(state.startsAt))"
-        case .during: return "Идёт до \(RU.time(state.endsAt))"
-        case .after: return state.nextStartsAt.map { "Далее в \(RU.time($0))" } ?? "Свободны до завтра"
+        case .before where isBreak:
+            return "\(Mood.line(Mood.breakLines, on: now)) · \(RU.time(state.startsAt))"
+        case .before where hurrying:
+            return "\(Mood.line(Mood.goLines, on: now)) · \(RU.time(state.startsAt))"
+        case .before:
+            return "Первая пара в \(RU.time(state.startsAt))"
+        case .during:
+            return "Идёт до \(RU.time(state.endsAt))"
+        case .after:
+            if let next = state.nextStartsAt { return "\(Mood.line(Mood.breakLines, on: now)) · \(RU.time(next))" }
+            return "Свободны до завтра"
         }
     }
 
     var timerCaption: String {
-        phase == .during ? "до конца" : "до начала"
+        switch phase {
+        case .before: return isBreak ? "до пары" : "до начала"
+        case .during: return "до конца"
+        case .after: return "до пары"
+        }
     }
 
     private var timerEnd: Date? {
@@ -145,6 +174,7 @@ private struct ActivityCard {
             Text(status)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }
@@ -168,11 +198,13 @@ private struct LessonActivityView: View {
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                             .multilineTextAlignment(.trailing)
+                            .lineLimit(1)
                         Text(card.timerCaption)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    .frame(maxWidth: 90, alignment: .trailing)
+                    .frame(maxWidth: 110, alignment: .trailing)
                 }
             }
             Text(card.title)
@@ -185,7 +217,7 @@ private struct LessonActivityView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text([card.status, card.phase == .after ? nil : state.address]
+                Text([card.status, card.phase == .after || card.isBreak ? nil : state.address]
                     .compactMap { $0?.isEmpty == false ? $0 : nil }
                     .joined(separator: " · "))
                     .font(.caption)
