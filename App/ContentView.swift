@@ -204,17 +204,16 @@ private struct MoodCard: View {
 
     var body: some View {
         if let days = Mood.vacationDays(lessons, now: now) {
-            card(Mood.line(Mood.vacationLines, on: now), detail: "До первой пары \(days) дн.", symbol: "beach.umbrella.fill")
+            card(Mood.line(Mood.vacationLines, on: now), detail: "До первой пары \(days) дн.", icon: Mood.vacationEmoji)
         } else if Mood.dayDone(lessons, now: now) {
-            card(Mood.line(Mood.dayDoneLines, on: now), detail: "Свободны до завтра", symbol: "party.popper.fill")
+            card(Mood.line(Mood.dayDoneLines, on: now), detail: "Свободны до завтра", icon: "🎉")
         }
     }
 
-    private func card(_ title: String, detail: String, symbol: String) -> some View {
+    private func card(_ title: String, detail: String, icon: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.title)
-                .foregroundStyle(.orange)
+            Text(icon)
+                .font(.largeTitle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(detail).font(.footnote).foregroundStyle(.secondary)

@@ -511,9 +511,18 @@ struct WidgetMessage: View {
         }
     }
 
+    @ViewBuilder private var icon: some View {
+        if entry.status == .ready, Mood.vacationDays(entry.lessons, now: entry.date) != nil {
+            Text(Mood.vacationEmoji).font(.title)
+        } else {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(.orange)
+        }
+    }
+
     private var symbol: String {
         guard entry.status == .ready else { return "calendar.badge.exclamationmark" }
-        if Mood.vacationDays(entry.lessons, now: entry.date) != nil { return "beach.umbrella.fill" }
         if Mood.dayDone(entry.lessons, now: entry.date) { return "party.popper.fill" }
         return "cup.and.saucer.fill"
     }
@@ -542,9 +551,7 @@ struct WidgetMessage: View {
             Text(shortText).font(.headline)
         default:
             VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.title2)
-                    .foregroundStyle(.orange)
+                icon
                 Spacer(minLength: 0)
                 if !entry.groupName.isEmpty {
                     Text(entry.groupName)

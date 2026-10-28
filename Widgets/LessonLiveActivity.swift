@@ -106,7 +106,7 @@ private struct ActivityCard {
 
     var status: String {
         switch phase {
-        case .before: return "Начало в \(RU.time(state.startsAt))"
+        case .before: return "\(Mood.line(Mood.goLines, on: now)) · \(RU.time(state.startsAt))"
         case .during: return "Идёт до \(RU.time(state.endsAt))"
         case .after: return state.nextStartsAt.map { "Далее в \(RU.time($0))" } ?? "Свободны до завтра"
         }
