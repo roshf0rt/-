@@ -411,14 +411,19 @@ private struct LessonCard: View {
     private var isCurrent: Bool { lesson.isOngoing(at: now) }
     private var kind: LessonKind { lesson.lessonKind }
 
+    /// The larger iPhones (Plus and Pro Max) have room for a slightly bigger time.
+    private static var isWideScreen: Bool { UIScreen.main.bounds.width >= 430 }
+    private static var startFont: Font { isWideScreen ? .title2.weight(.semibold) : .title3.weight(.semibold) }
+    private static var endFont: Font { isWideScreen ? .body : .subheadline }
+
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 if lesson.isTimeUnspecified {
                     Text("—").font(.title3.weight(.semibold))
                 } else {
-                    Text(RU.time(lesson.startsAt)).font(.title3.weight(.semibold))
-                    Text(RU.time(lesson.endsAt)).font(.subheadline).foregroundStyle(.secondary)
+                    Text(RU.time(lesson.startsAt)).font(Self.startFont)
+                    Text(RU.time(lesson.endsAt)).font(Self.endFont).foregroundStyle(.secondary)
                 }
             }
             .monospacedDigit()

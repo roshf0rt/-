@@ -10,6 +10,10 @@ struct HurryInfo {
     /// Ближе этого считаем, что вы уже в универе.
     static let campusRadius: Double = 500
 
+    /// How early to hurry before each pair, by pair id: 15 minutes before the first pair of the
+    /// day, 90 seconds before a pair that follows a break, and nothing for the rest.
+    var leads: [String: TimeInterval] = [:]
+
     func distance(to lesson: Lesson) -> Double? { distances[lesson.shortAddress] }
 
     func isAtCampus(for lesson: Lesson) -> Bool {
@@ -18,11 +22,12 @@ struct HurryInfo {
 
     /// За сколько до начала пора выходить: дорога (≈4 мин на км, от двери до двери) плюс запас.
     func lead(for lesson: Lesson) -> TimeInterval {
-        guard let distance = distance(to: lesson) else { return TimeInterval(Hurry.minutes * 60) }
+        let eligible = leads[lesson.id] ?? 0
+        guard let distance = distance(to: lesson) else { return eligible }
         if distance <= Self.campusRadius { return 0 }
         let travel = distance / 1000 * 4 + 5
         // Location is only checked in the hour before a pair, so the lead never exceeds it.
-        return max(Double(Hurry.minutes), min(travel + 5, 60)) * 60
+        return max(eligible / 60, min(travel + 5, 60)) * 60
     }
 
     func isSoon(_ lesson: Lesson, at date: Date) -> Bool {

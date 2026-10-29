@@ -83,7 +83,8 @@ struct ScheduleProvider: TimelineProvider {
         }
 
         let lessons = snapshot.lessons.visible(forSubgroup: subgroup)
-        let hurry = allowNetwork ? await travelInfo(for: lessons, now: now) : HurryInfo()
+        var hurry = allowNetwork ? await travelInfo(for: lessons, now: now) : HurryInfo()
+        hurry.leads = hurryLeads(for: lessons)
         // Redraw at every start and end of a pair, when it is time to go, and at midnight
         // for the day view. During a pair, every 2 minutes so the ring shrinks; that is
         // limited to the next hours, after which the timeline is reloaded.
@@ -108,6 +109,22 @@ struct ScheduleProvider: TimelineProvider {
         return dates.sorted().map {
             ScheduleEntry(date: $0, status: .ready, groupName: group.name, lessons: lessons, hurry: hurry)
         }
+    }
+
+    /// Only the first pair of a day and a pair after a break are urgent; other pairs are not.
+    private static func hurryLeads(for lessons: [Lesson]) -> [String: TimeInterval] {
+        let calendar = Calendar.current
+        var leads: [String: TimeInterval] = [:]
+        var previous: Lesson?
+        for lesson in lessons.filter({ !$0.isTimeUnspecified }).sorted(by: { $0.startsAt < $1.startsAt }) {
+            if let before = previous, calendar.isDate(before.startsAt, inSameDayAs: lesson.startsAt) {
+                if before.endsAt <= lesson.startsAt { leads[lesson.id] = TimeInterval(Hurry.breakSeconds) }
+            } else {
+                leads[lesson.id] = TimeInterval(Hurry.minutes * 60)
+            }
+            previous = lesson
+        }
+        return leads
     }
 
     /// Distances from where you are to the buildings of the next day's pairs.
