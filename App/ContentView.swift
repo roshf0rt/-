@@ -371,6 +371,8 @@ private struct FocusCard: View {
                         .opacity(0.8)
                 }
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -420,7 +422,10 @@ private struct LessonCard: View {
                 }
             }
             .monospacedDigit()
-            .frame(width: 58, alignment: .leading)
+            // A time like 10:00 must never wrap onto a second line, even on the narrow Pro screens.
+            .lineLimit(1)
+            .fixedSize()
+            .frame(minWidth: 58, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(lesson.subject)

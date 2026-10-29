@@ -219,6 +219,7 @@ struct DayView: View {
                     ForEach(Array(agenda.lessons.prefix(3))) { lesson in
                         HStack(spacing: 4) {
                             Text(RU.time(lesson.startsAt)).fontWeight(.semibold).monospacedDigit()
+                                .lineLimit(1).fixedSize()
                             Text(lesson.roomTitle).fontWeight(.heavy).widgetAccentable()
                             Text(lesson.subject).lineLimit(1).minimumScaleFactor(0.7)
                         }
