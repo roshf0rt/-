@@ -28,6 +28,26 @@ HEADERS = {
 }
 WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
 
+
+def premium(emoji_id: str, fallback: str) -> str:
+    """Премиум-эмодзи в тексте. Анимация видна при Premium у владельца бота, иначе — обычный эмодзи."""
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+E_CALENDAR = premium("5890937706803894250", "📅")
+E_CLOCK = premium("5983150113483134607", "⏰")
+E_NOW = premium("5773626993010546707", "▶️")
+E_NEXT = premium("6037622221625626773", "➡️")
+E_DONE = premium("6041731551845159060", "🎉")
+E_EMPTY = premium("5983401171501454028", "💤")
+E_BOT = premium("6030400221232501136", "🤖")
+E_LOCK = premium("6037249452824072506", "🔒")
+E_INFO = premium("6028435952299413210", "ℹ️")
+E_BELL = premium("6039677157318332604", "🔔")
+E_SUN = premium("5938525265838739643", "☀️")
+E_WARN = premium("6030563507299160824", "❗️")
+E_LIST = premium("5766994197705921104", "🗂")
+
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 GROUP_ID = os.environ.get("GROUP_ID", "65979")
 ALLOWED = {int(x) for x in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
@@ -101,13 +121,13 @@ schedule = Schedule()
 def fmt_pair(pair: Pair) -> str:
     room = f" · {html.escape(pair.room)}" if pair.room else ""
     kind = f" ({html.escape(pair.kind)})" if pair.kind else ""
-    return f"<b>{pair.start:%H:%M}–{pair.end:%H:%M}</b> {html.escape(pair.title)}{kind}{room}"
+    return f"{E_CLOCK} <b>{pair.start:%H:%M}–{pair.end:%H:%M}</b> {html.escape(pair.title)}{kind}{room}"
 
 
 def day_block(day: date, pairs: list[Pair]) -> str:
-    head = f"<b>{day:%d.%m} {WEEKDAYS[day.weekday()]}</b>"
+    head = f"{E_CALENDAR} <b>{day:%d.%m} {WEEKDAYS[day.weekday()]}</b>"
     if not pairs:
-        return f"{head}\nПар нет"
+        return f"{head}\n{E_EMPTY} Пар нет"
     return "\n".join([head, *(fmt_pair(pair) for pair in pairs)])
 
 
@@ -118,12 +138,13 @@ async def pairs_on(day: date) -> list[Pair]:
 @dp.message(Command("start"))
 async def start(message: Message) -> None:
     if not ALLOWED:
-        await message.answer(f"Ваш chat id: <code>{message.chat.id}</code>. "
+        await message.answer(f"{E_INFO} Ваш chat id: <code>{message.chat.id}</code>. "
                              "Добавьте его в ALLOWED_CHAT_IDS и перезапустите бота.")
     elif message.chat.id not in ALLOWED:
-        await message.answer("Бот личный.")
+        await message.answer(f"{E_LOCK} Бот личный.")
     else:
-        await message.answer("Команды: /today — пары сегодня, /next — ближайшая пара, /week — на неделю.")
+        await message.answer(f"{E_BOT} Команды: /today — пары сегодня, /next — ближайшая пара, "
+                             "/week — на неделю.")
 
 
 @dp.message(Command("today"), F.chat.id.in_(ALLOWED))
@@ -144,10 +165,10 @@ async def next_pair(message: Message) -> None:
         upcoming = [pair for pair in pairs if pair.start > now]
         lines = []
         if current:
-            lines.append(f"<b>Сейчас:</b> {fmt_pair(current[0])}")
+            lines.append(f"{E_NOW} <b>Сейчас:</b> {fmt_pair(current[0])}")
         if upcoming:
-            lines.append(f"<b>Дальше:</b> {fmt_pair(upcoming[0])}")
-        return "\n".join(lines) or "Сегодня пар больше нет"
+            lines.append(f"{E_NEXT} <b>Дальше:</b> {fmt_pair(upcoming[0])}")
+        return "\n".join(lines) or f"{E_DONE} Сегодня пар больше нет"
 
     await answer_safely(message, text)
 
@@ -162,7 +183,7 @@ async def week(message: Message) -> None:
             pairs = await pairs_on(day)
             if pairs:
                 blocks.append(day_block(day, pairs))
-        return "\n\n".join(blocks) or "На неделю пар нет"
+        return "\n\n".join(blocks) or f"{E_EMPTY} На неделю пар нет"
 
     await answer_safely(message, text)
 
@@ -172,7 +193,7 @@ async def answer_safely(message: Message, build) -> None:
         await message.answer(await build())
     except Exception:
         log.exception("schedule request failed")
-        await message.answer("Не получилось загрузить расписание. Попробуйте позже.")
+        await message.answer(f"{E_WARN} Не получилось загрузить расписание. Попробуйте позже.")
 
 
 async def reminder_loop(bot: Bot) -> None:
@@ -187,7 +208,7 @@ async def reminder_loop(bot: Bot) -> None:
                     continue
                 sent.add(key)
                 for chat_id in ALLOWED:
-                    await bot.send_message(chat_id, f"⏰ Через {REMIND_MINUTES} мин: {fmt_pair(pair)}")
+                    await bot.send_message(chat_id, f"{E_BELL} Через {REMIND_MINUTES} мин: {fmt_pair(pair)}")
         except Exception:
             log.exception("reminder check failed")
         await asyncio.sleep(60)
@@ -203,7 +224,7 @@ async def digest_loop(bot: Bot) -> None:
                 last_sent = now.date()
                 text = day_block(now.date(), await pairs_on(now.date()))
                 for chat_id in ALLOWED:
-                    await bot.send_message(chat_id, f"☀️ Доброе утро!\n\n{text}")
+                    await bot.send_message(chat_id, f"{E_SUN} Доброе утро!\n\n{text}")
         except Exception:
             log.exception("digest failed")
         await asyncio.sleep(60)
