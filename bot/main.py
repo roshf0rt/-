@@ -235,7 +235,7 @@ async def week(message: Message) -> None:
             day = today_ + timedelta(days=offset)
             pairs = await day_pairs(user, day)
             if pairs:
-                blocks.append(day_block(day, pairs))
+                blocks.append(f"<blockquote expandable>{day_block(day, pairs)}</blockquote>")
         return "\n\n".join(blocks) or f"{E_EMPTY} На неделю пар нет"
 
     await answer_schedule(message, text)
