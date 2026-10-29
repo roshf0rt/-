@@ -9,6 +9,7 @@ import logging
 import os
 from datetime import date, datetime, timedelta
 
+import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -226,19 +227,50 @@ async def next_pair(message: Message) -> None:
     await answer_schedule(message, text)
 
 
+async def send_rich_table(chat_id: int, rows: list[list[str]], caption: str) -> None:
+    """Таблица через sendRichMessage: первая строка — заголовок. Текст ячеек — обычный, без HTML."""
+    cells = [[{"text": cell, "is_header": row_index == 0, "align": "left", "valign": "middle"}
+              for cell in row] for row_index, row in enumerate(rows)]
+    body = {
+        "chat_id": chat_id,
+        "rich_message": {"blocks": [{
+            "type": "table", "cells": cells, "caption": caption,
+            "is_bordered": True, "is_striped": True, "is_compact": True,
+        }]},
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendRichMessage", json=body) as response:
+            data = await response.json(content_type=None)
+    if not data.get("ok"):
+        raise RuntimeError(f"sendRichMessage failed: {data.get('description')}")
+
+
 @dp.message(Command("week"))
 async def week(message: Message) -> None:
-    async def text(user: User) -> str:
-        today_ = datetime.now(TZ).date()
-        blocks = []
-        for offset in range(7):
-            day = today_ + timedelta(days=offset)
-            pairs = await day_pairs(user, day)
-            if pairs:
-                blocks.append(f"<blockquote expandable>{day_block(day, pairs)}</blockquote>")
-        return "\n\n".join(blocks) or f"{E_EMPTY} На неделю пар нет"
-
-    await answer_schedule(message, text)
+    user = user_with_group(message.chat.id)
+    if user is None:
+        await message.answer(NEED_GROUP)
+        return
+    today_ = datetime.now(TZ).date()
+    rows = [["День", "Время", "Предмет", "Ауд."]]
+    blocks = []
+    for offset in range(7):
+        day = today_ + timedelta(days=offset)
+        pairs = await day_pairs(user, day)
+        for pair in pairs:
+            rows.append([f"{day:%d.%m} {WEEKDAYS[day.weekday()]}", f"{pair.start:%H:%M}–{pair.end:%H:%M}",
+                         pair.title, pair.room or "—"])
+        if pairs:
+            blocks.append(f"<blockquote expandable>{day_block(day, pairs)}</blockquote>")
+    if len(rows) == 1:
+        await message.answer(f"{E_EMPTY} На неделю пар нет")
+        return
+    try:
+        await send_rich_table(message.chat.id, rows, "Расписание на неделю")
+    except Exception:
+        # Если таблица не отправилась, отдаём прежний вид: сворачиваемые дни.
+        log.exception("rich table failed, falling back to text")
+        await message.answer("\n\n".join(blocks))
 
 
 # ---------- ввод номера группы ----------
