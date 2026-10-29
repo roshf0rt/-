@@ -1,0 +1,22 @@
+{
+  "name": "Расписание УрФУ",
+  "identifier": "ru.roshfort.urfu.source",
+  "subtitle": "Расписание УрФУ, виджеты и живая карточка пары",
+  "sourceURL": "https://raw.githubusercontent.com/roshf0rt/-/claude/urfu-schedule-widgets/docs/source.json",
+  "apps": [
+    {
+      "name": "Расписание УрФУ",
+      "bundleIdentifier": "ru.roshfort.UrFUSchedule",
+      "developerName": "roshfort",
+      "subtitle": "Пары, виджеты, общее ДЗ",
+      "localizedDescription": "Расписание УрФУ по группе и подгруппе: виджеты на главном и заблокированном экране, живая карточка пары, заметки и общее домашнее задание.",
+      "iconURL": "https://raw.githubusercontent.com/roshf0rt/-/claude/urfu-schedule-widgets/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "version": "1.2",
+      "buildVersion": "3",
+      "versionDate": "2026-10-29",
+      "downloadURL": "https://github.com/roshf0rt/-/releases/download/v1.2-b3/UrFUSchedule-unsigned.ipa",
+      "size": 1137158,
+      "minOSVersion": "17.0"
+    }
+  ]
+}
