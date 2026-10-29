@@ -98,7 +98,14 @@ enum LiveActivities {
         let firstOfDay = state.previousEndsAt == nil
         let hurry = state.startsAt.addingTimeInterval(-TimeInterval(firstOfDay ? Hurry.minutes * 60 : Hurry.breakSeconds))
         let nextHurry = state.nextStartsAt?.addingTimeInterval(-TimeInterval(Hurry.breakSeconds))
-        return [state.previousEndsAt, hurry, state.startsAt, state.endsAt, nextHurry, state.nextStartsAt]
-            .compactMap { $0 }.filter { $0 > now }.min()
+        let islandOpens = [state.startsAt, state.nextStartsAt].compactMap { $0?.addingTimeInterval(-60 * 60) }
+        var candidates = [state.previousEndsAt, hurry, state.startsAt, state.endsAt, nextHurry, state.nextStartsAt]
+            + islandOpens.map { Optional($0) }
+        // Inside the last hour the countdown is in minutes, so the card changes every minute.
+        let target = [state.startsAt, state.endsAt, state.nextStartsAt].compactMap { $0 }.first { $0 > now }
+        if let target, target.timeIntervalSince(now) <= 60 * 60 {
+            candidates.append(Date(timeIntervalSinceReferenceDate: (now.timeIntervalSinceReferenceDate / 60).rounded(.up) * 60))
+        }
+        return candidates.compactMap { $0 }.filter { $0 > now }.min()
     }
 }

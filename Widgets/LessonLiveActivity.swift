@@ -14,55 +14,63 @@ struct LessonLiveActivity: Widget {
             let card = ActivityCard(state: context.state)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(card.room)
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(card.tint)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .padding(.leading, 6)
+                    if card.state.showsInIsland && card.islandVisible {
+                        Text(card.room)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(card.tint)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .padding(.leading, 6)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 0) {
-                        card.minutesLeft
-                            .font(.title3.weight(.semibold))
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        Text(card.timerCaption)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+                    if card.state.showsInIsland && card.islandVisible {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(card.islandCountdown)
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                                .multilineTextAlignment(.trailing)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                            Text(card.timerCaption)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                        }
+                        .padding(.trailing, 6)
                     }
-                    .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(card.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        card.progress
+                    if card.state.showsInIsland && card.islandVisible {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(card.title)
+                                .font(.headline)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            card.progress
+                        }
+                        .padding(.horizontal, 6)
                     }
-                    .padding(.horizontal, 6)
                 }
             } compactLeading: {
-                if card.state.showsInIsland {
+                if card.state.showsInIsland && card.islandVisible {
                     Text(card.room)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(card.tint)
                         .lineLimit(1)
                 }
             } compactTrailing: {
-                if card.state.showsInIsland {
-                    card.minutesLeft
+                if card.state.showsInIsland && card.islandVisible {
+                    Text(card.islandCountdown)
                         .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
                         .multilineTextAlignment(.trailing)
                         .lineLimit(1)
                         .frame(maxWidth: 58)
                 }
             } minimal: {
-                if card.state.showsInIsland {
+                if card.state.showsInIsland && card.islandVisible {
                     Text(card.room)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(card.tint)
@@ -165,12 +173,17 @@ private struct ActivityCard {
     }
 
     /// Minutes only, for the Dynamic Island: the system timer always shows seconds.
-    @ViewBuilder var minutesLeft: some View {
-        if let end = timerEnd {
-            Text(end, style: .relative)
-        } else {
-            Text("✓")
-        }
+    /// The Dynamic Island shows the island only in the last hour before a pair, or during it.
+    var islandVisible: Bool {
+        guard let end = timerEnd, end > now else { return false }
+        return phase == .during || end.timeIntervalSince(now) <= 60 * 60
+    }
+
+    /// Bare minutes without a unit under an hour, hours and minutes above it.
+    var islandCountdown: String {
+        guard let end = timerEnd else { return "✓" }
+        let minutes = max(Int((end.timeIntervalSince(now) / 60).rounded(.up)), 0)
+        return minutes < 60 ? "\(minutes)" : "\(minutes / 60) ч \(String(format: "%02d", minutes % 60))"
     }
 
     @ViewBuilder var progress: some View {
