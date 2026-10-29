@@ -149,13 +149,20 @@ struct ContentView: View {
         NavigationStack {
             Group {
                 if model.group == nil {
-                    ContentUnavailableView {
-                        Label("Выберите группу", systemImage: "calendar.badge.clock")
-                    } description: {
-                        Text("Найдите свою группу, чтобы видеть пары в приложении и в виджетах.")
-                    } actions: {
-                        Button("Найти группу") { choosingGroup = true }
-                            .buttonStyle(.borderedProminent)
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            WelcomeCard()
+                            ContentUnavailableView {
+                                Label("Выберите группу", systemImage: "calendar.badge.clock")
+                            } description: {
+                                Text("Найдите свою группу, чтобы видеть пары в приложении и в виджетах.")
+                            } actions: {
+                                Button("Найти группу") { choosingGroup = true }
+                                    .buttonStyle(.borderedProminent)
+                            }
+                            CreditFooter()
+                        }
+                        .padding(16)
                     }
                 } else {
                     ScheduleList(model: model, notes: notes, community: community)
@@ -242,6 +249,8 @@ private struct ScheduleList: View {
                 let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
 
                 VStack(alignment: .leading, spacing: 12) {
+                    WelcomeCard()
+
                     if let error = model.error {
                         Label(error, systemImage: "wifi.exclamationmark")
                             .font(.footnote)
@@ -290,6 +299,8 @@ private struct ScheduleList: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
+
+                    CreditFooter()
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
