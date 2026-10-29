@@ -179,11 +179,11 @@ private struct ActivityCard {
         return phase == .during || end.timeIntervalSince(now) <= 60 * 60
     }
 
-    /// Bare minutes without a unit under an hour, hours and minutes above it.
+    /// Minutes left, e.g. «45 мин». The island appears only in the last hour, so no hours are needed.
     var islandCountdown: String {
         guard let end = timerEnd else { return "✓" }
         let minutes = max(Int((end.timeIntervalSince(now) / 60).rounded(.up)), 0)
-        return minutes < 60 ? "\(minutes)" : "\(minutes / 60) ч \(String(format: "%02d", minutes % 60))"
+        return "\(minutes) мин"
     }
 
     @ViewBuilder var progress: some View {
