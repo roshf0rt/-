@@ -1,0 +1,9 @@
+# Отдельный проект: не пересекается с другими контейнерами на сервере.
+# Порты наружу не открыты: бот сам ходит в Telegram (long polling).
+name: urfu-bot
+
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
