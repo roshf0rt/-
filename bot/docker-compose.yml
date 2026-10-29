@@ -1,9 +1,14 @@
 # Отдельный проект: не пересекается с другими контейнерами на сервере.
 # Порты наружу не открыты: бот сам ходит в Telegram (long polling).
+# База пользователей лежит в ./data и переживает пересборку.
 name: urfu-bot
 
 services:
   bot:
     build: .
     env_file: .env
+    environment:
+      DB_PATH: /data/bot.db
+    volumes:
+      - ./data:/data
     restart: unless-stopped

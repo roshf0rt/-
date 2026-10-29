@@ -11,20 +11,13 @@ if [ -f .env ]; then
 fi
 
 # Сначала токен: вставьте и нажмите Enter. Виден, чтобы на телефоне было понятно, что вставилось.
-echo "1/2. Вставьте токен бота от @BotFather и нажмите Enter:"
+echo "Вставьте токен бота от @BotFather и нажмите Enter:"
 read -r bot_token
 [ -n "$bot_token" ] || { echo "Токен не введён."; exit 1; }
-
-echo "2/2. Введите ваш chat id (например 523233167) и нажмите Enter."
-echo "     Если не знаете — просто нажмите Enter, бот покажет его на /start."
-read -r chat_id
 
 umask 077
 cat > .env <<EOF
 BOT_TOKEN=$bot_token
-ALLOWED_CHAT_IDS=$chat_id
-GROUP_ID=65979
-REMIND_MINUTES=10
 DIGEST_HOUR=8
 EOF
 unset bot_token
