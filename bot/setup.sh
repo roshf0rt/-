@@ -10,12 +10,14 @@ if [ -f .env ]; then
     [ "${answer,,}" = "y" ] || { echo "Оставляю прежний .env."; exit 0; }
 fi
 
-# -s: ввод токена не отображается на экране.
-read -rsp "Токен бота от @BotFather: " bot_token
-echo
+# Сначала токен: вставьте и нажмите Enter. Виден, чтобы на телефоне было понятно, что вставилось.
+echo "1/2. Вставьте токен бота от @BotFather и нажмите Enter:"
+read -r bot_token
 [ -n "$bot_token" ] || { echo "Токен не введён."; exit 1; }
 
-read -rp "Ваш chat id (пусто, если не знаете — бот покажет его на /start): " chat_id
+echo "2/2. Введите ваш chat id (например 523233167) и нажмите Enter."
+echo "     Если не знаете — просто нажмите Enter, бот покажет его на /start."
+read -r chat_id
 
 umask 077
 cat > .env <<EOF
