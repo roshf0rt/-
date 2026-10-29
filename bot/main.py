@@ -2,6 +2,9 @@
 
 Настройки повторяют приложение: группа, подгруппа, напоминание до пары,
 сообщение, когда пары кончились (и про каникулы). Плюс утренняя сводка.
+
+Сообщения с расписанием и уведомления идут rich-блоками (см. rich.py).
+Сообщения с кнопками остаются обычным HTML-текстом.
 """
 import asyncio
 import html
@@ -9,7 +12,6 @@ import logging
 import os
 from datetime import date, datetime, timedelta
 
-import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -17,7 +19,9 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message)
 
+import rich
 import urfu
+from rich import bold, code, heading, icon, paragraph
 from store import REMIND_CHOICES, Store, User
 from urfu import TZ, Pair
 
@@ -42,36 +46,27 @@ VACATION_LINES = [
 ]
 VACATION_GAP = timedelta(days=10)
 
-
-def premium(emoji_id: str, fallback: str) -> str:
-    """Премиум-эмодзи в тексте. Анимация видна при Premium у владельца бота, иначе — обычный эмодзи."""
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
-
-
-E_CALENDAR = premium("5890937706803894250", "📅")
-E_CLOCK = premium("5983150113483134607", "⏰")
-E_NOW = premium("5773626993010546707", "▶️")
-E_NEXT = premium("6037622221625626773", "➡️")
-E_DONE = premium("6041731551845159060", "🎉")
-E_EMPTY = premium("5983401171501454028", "💤")
-E_BOT = premium("6030400221232501136", "🤖")
-E_LOCK = premium("6037249452824072506", "🔒")
-E_INFO = premium("6028435952299413210", "ℹ️")
-E_BELL = premium("6039677157318332604", "🔔")
-E_SUN = premium("5938525265838739643", "☀️")
-E_WARN = premium("6030563507299160824", "❗️")
-E_LIST = premium("5766994197705921104", "🗂")
-
-WELCOME = (f"{E_BOT} <b>Привет!</b> Я присылаю расписание группы УрФУ.\n\n"
-           "Напишите номер группы, например <code>433505</code>.\n\n"
-           "Потом: /today, /next, /week, /settings.\n\n"
-           "Бот хранит chat id, группу и подгруппу. Удалить всё — /delete.")
-NEED_GROUP = f"{E_INFO} Сначала выберите группу: напишите её номер, например 433505."
+WELCOME = [
+    paragraph(icon("bot"), " ", bold("Привет!"), " Я присылаю расписание группы УрФУ."),
+    paragraph("Напишите номер группы, например ", code("433505"), "."),
+    paragraph("Потом: /today, /next, /week, /settings."),
+    paragraph("Бот хранит chat id, группу и подгруппу. Удалить всё — /delete."),
+]
+NEED_GROUP = [paragraph(icon("info"), " Сначала выберите группу: напишите её номер, например ", code("433505"), ".")]
+GROUP_PROMPT = [paragraph("Напишите номер группы, например ", code("433505"), ".")]
+SEARCH_FAILED = [paragraph(icon("warn"), " Не получилось найти группы. Попробуйте позже.")]
+SCHEDULE_FAILED = [paragraph(icon("warn"), " Не получилось загрузить расписание. Попробуйте позже.")]
 
 log = logging.getLogger("urfu-bot")
 store = Store(DB_PATH)
 dp = Dispatcher()
 _cache: dict[str, tuple[datetime, list[Pair]]] = {}
+
+
+def html_icon(name: str) -> str:
+    """Премиум-эмодзи для HTML-текста (сообщения с кнопками)."""
+    emoji_id, fallback = rich.ICONS[name]
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
 async def pairs_for(group_id: str) -> list[Pair]:
@@ -93,17 +88,18 @@ async def day_pairs(user: User, day: date) -> list[Pair]:
     return [pair for pair in visible(await pairs_for(user.group_id), user.subgroup) if pair.start.date() == day]
 
 
-def fmt_pair(pair: Pair) -> str:
-    room = f" · {html.escape(pair.room)}" if pair.room else ""
-    kind = f" ({html.escape(pair.kind)})" if pair.kind else ""
-    return f"{E_CLOCK} <b>{pair.start:%H:%M}–{pair.end:%H:%M}</b> {html.escape(pair.title)}{kind}{room}"
+def pair_text(pair: Pair) -> list:
+    """Строка пары: время жирным, затем предмет, тип занятия и кабинет."""
+    kind = f" ({pair.kind})" if pair.kind else ""
+    room = f" · {pair.room}" if pair.room else ""
+    return [bold(f"{pair.start:%H:%M}–{pair.end:%H:%M}"), f" {pair.title}{kind}{room}"]
 
 
-def day_block(day: date, pairs: list[Pair]) -> str:
-    head = f"{E_CALENDAR} <b>{day:%d.%m} {WEEKDAYS[day.weekday()]}</b>"
+def day_blocks(day: date, pairs: list[Pair]) -> list[dict]:
+    title = heading([icon("calendar"), f" {day:%d.%m} {WEEKDAYS[day.weekday()]}"], 3)
     if not pairs:
-        return f"{head}\n{E_EMPTY} Пар нет"
-    return "\n".join([head, *(fmt_pair(pair) for pair in pairs)])
+        return [title, paragraph(icon("empty"), " Пар нет")]
+    return [title, *(paragraph(icon("clock"), " ", *pair_text(pair)) for pair in pairs)]
 
 
 def line(lines: list[str], day: date) -> str:
@@ -126,7 +122,7 @@ def settings_view(user: User) -> tuple[str, InlineKeyboardMarkup]:
     remind = f"Напоминать за {user.remind_minutes} мин" if user.remind_minutes else "Напоминания выкл"
     digest = "вкл" if user.digest else "выкл"
     dayend = "вкл" if user.dayend else "выкл"
-    text = (f"{E_BOT} <b>Настройки</b>\n"
+    text = (f"{html_icon('bot')} <b>Настройки</b>\n"
             f"Группа: {html.escape(user.group_name or '—')}\n"
             f"Подгруппа: {subgroup_label(user.subgroup)}")
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -144,6 +140,15 @@ def user_with_group(chat_id: int) -> User | None:
     return user if user and user.group_id else None
 
 
+async def deliver(bot: Bot, chat_id: int, blocks: list[dict]) -> None:
+    """Rich-сообщение; если Telegram не принял его, тот же текст обычным сообщением."""
+    try:
+        await rich.send(BOT_TOKEN, chat_id, blocks)
+    except Exception:
+        log.exception("rich message failed, sending plain text")
+        await bot.send_message(chat_id, html.escape(rich.plain_blocks(blocks)))
+
+
 async def show(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | None) -> None:
     try:
         await cb.message.edit_text(text, reply_markup=keyboard)
@@ -154,13 +159,14 @@ async def show(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | No
 async def answer_schedule(message: Message, build) -> None:
     user = user_with_group(message.chat.id)
     if user is None:
-        await message.answer(NEED_GROUP)
+        await deliver(message.bot, message.chat.id, NEED_GROUP)
         return
     try:
-        await message.answer(await build(user))
+        blocks = await build(user)
     except Exception:
         log.exception("schedule request failed")
-        await message.answer(f"{E_WARN} Не получилось загрузить расписание. Попробуйте позже.")
+        blocks = SCHEDULE_FAILED
+    await deliver(message.bot, message.chat.id, blocks)
 
 
 # ---------- команды ----------
@@ -168,19 +174,19 @@ async def answer_schedule(message: Message, build) -> None:
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
     store.ensure(message.chat.id)
-    await message.answer(WELCOME)
+    await deliver(message.bot, message.chat.id, WELCOME)
 
 
 @dp.message(Command("group"))
 async def group(message: Message) -> None:
     store.ensure(message.chat.id)
-    await message.answer("Напишите номер группы, например 433505.")
+    await deliver(message.bot, message.chat.id, GROUP_PROMPT)
 
 
 @dp.message(Command("subgroup"))
 async def subgroup(message: Message) -> None:
     if user_with_group(message.chat.id) is None:
-        await message.answer(NEED_GROUP)
+        await deliver(message.bot, message.chat.id, NEED_GROUP)
         return
     await message.answer("Выберите подгруппу:", reply_markup=subgroup_keyboard())
 
@@ -189,7 +195,7 @@ async def subgroup(message: Message) -> None:
 async def settings(message: Message) -> None:
     user = user_with_group(message.chat.id)
     if user is None:
-        await message.answer(NEED_GROUP)
+        await deliver(message.bot, message.chat.id, NEED_GROUP)
         return
     text, keyboard = settings_view(user)
     await message.answer(text, reply_markup=keyboard)
@@ -198,62 +204,44 @@ async def settings(message: Message) -> None:
 @dp.message(Command("delete"))
 async def delete(message: Message) -> None:
     store.delete(message.chat.id)
-    await message.answer("Данные удалены. Напишите /start, чтобы начать заново.")
+    await deliver(message.bot, message.chat.id, [paragraph("Данные удалены. Напишите /start, чтобы начать заново.")])
 
 
 @dp.message(Command("today"))
 async def today(message: Message) -> None:
-    async def text(user: User) -> str:
+    async def blocks(user: User) -> list[dict]:
         day = datetime.now(TZ).date()
-        return day_block(day, await day_pairs(user, day))
+        return day_blocks(day, await day_pairs(user, day))
 
-    await answer_schedule(message, text)
+    await answer_schedule(message, blocks)
 
 
 @dp.message(Command("next"))
 async def next_pair(message: Message) -> None:
-    async def text(user: User) -> str:
+    async def blocks(user: User) -> list[dict]:
         now = datetime.now(TZ)
         pairs = await day_pairs(user, now.date())
         current = [pair for pair in pairs if pair.start <= now < pair.end]
         upcoming = [pair for pair in pairs if pair.start > now]
-        lines = []
+        result = []
         if current:
-            lines.append(f"{E_NOW} <b>Сейчас:</b> {fmt_pair(current[0])}")
+            result.append(paragraph(icon("now"), " ", bold("Сейчас: "), *pair_text(current[0])))
         if upcoming:
-            lines.append(f"{E_NEXT} <b>Дальше:</b> {fmt_pair(upcoming[0])}")
-        return "\n".join(lines) or f"{E_DONE} Сегодня пар больше нет"
+            result.append(paragraph(icon("next"), " ", bold("Дальше: "), *pair_text(upcoming[0])))
+        return result or [paragraph(icon("done"), " Сегодня пар больше нет")]
 
-    await answer_schedule(message, text)
-
-
-async def send_rich_table(chat_id: int, rows: list[list[str]], caption: str) -> None:
-    """Таблица через sendRichMessage: первая строка — заголовок. Текст ячеек — обычный, без HTML."""
-    cells = [[{"text": cell, "is_header": row_index == 0, "align": "left", "valign": "middle"}
-              for cell in row] for row_index, row in enumerate(rows)]
-    body = {
-        "chat_id": chat_id,
-        "rich_message": {"blocks": [{
-            "type": "table", "cells": cells, "caption": caption,
-            "is_bordered": True, "is_striped": True, "is_compact": True,
-        }]},
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendRichMessage", json=body) as response:
-            data = await response.json(content_type=None)
-    if not data.get("ok"):
-        raise RuntimeError(f"sendRichMessage failed: {data.get('description')}")
+    await answer_schedule(message, blocks)
 
 
 @dp.message(Command("week"))
 async def week(message: Message) -> None:
     user = user_with_group(message.chat.id)
     if user is None:
-        await message.answer(NEED_GROUP)
+        await deliver(message.bot, message.chat.id, NEED_GROUP)
         return
     today_ = datetime.now(TZ).date()
     rows = [["День", "Время", "Предмет", "Ауд."]]
-    blocks = []
+    days = []
     for offset in range(7):
         day = today_ + timedelta(days=offset)
         pairs = await day_pairs(user, day)
@@ -261,16 +249,16 @@ async def week(message: Message) -> None:
             rows.append([f"{day:%d.%m} {WEEKDAYS[day.weekday()]}", f"{pair.start:%H:%M}–{pair.end:%H:%M}",
                          pair.title, pair.room or "—"])
         if pairs:
-            blocks.append(f"<blockquote expandable>{day_block(day, pairs)}</blockquote>")
+            days.extend(day_blocks(day, pairs))
     if len(rows) == 1:
-        await message.answer(f"{E_EMPTY} На неделю пар нет")
+        await deliver(message.bot, message.chat.id, [paragraph(icon("empty"), " На неделю пар нет")])
         return
     try:
-        await send_rich_table(message.chat.id, rows, "Расписание на неделю")
+        await rich.send(BOT_TOKEN, message.chat.id, [rich.table(rows, "Расписание на неделю")])
     except Exception:
-        # Если таблица не отправилась, отдаём прежний вид: сворачиваемые дни.
-        log.exception("rich table failed, falling back to text")
-        await message.answer("\n\n".join(blocks))
+        # Таблица не ушла: присылаем дни списком, тоже rich-блоками.
+        log.exception("rich table failed, falling back to day list")
+        await deliver(message.bot, message.chat.id, days)
 
 
 # ---------- ввод номера группы ----------
@@ -282,22 +270,23 @@ async def search_group(message: Message) -> None:
         return
     store.ensure(message.chat.id)
     if not query or len(query) > 20:
-        await message.answer("Напишите номер группы, например 433505.")
+        await deliver(message.bot, message.chat.id, GROUP_PROMPT)
         return
     try:
         groups = await urfu.search_groups(query)
     except Exception:
         log.exception("group search failed")
-        await message.answer(f"{E_WARN} Не получилось найти группы. Попробуйте позже.")
+        await deliver(message.bot, message.chat.id, SEARCH_FAILED)
         return
     if not groups:
-        await message.answer(f"{E_LIST} Группа «{html.escape(query)}» не найдена. Проверьте номер.")
+        await deliver(message.bot, message.chat.id,
+                      [paragraph(icon("list"), f" Группа «{query}» не найдена. Проверьте номер.")])
         return
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=group.name, callback_data=f"g:{group.id}:{group.name}"[:64])]
         for group in groups
     ])
-    await message.answer(f"{E_LIST} Выберите группу:", reply_markup=keyboard)
+    await message.answer(f"{html_icon('list')} Выберите группу:", reply_markup=keyboard)
 
 
 # ---------- кнопки ----------
@@ -308,7 +297,7 @@ async def pick_group(cb: CallbackQuery) -> None:
     chat_id = cb.message.chat.id
     store.ensure(chat_id)
     store.update(chat_id, group_id=group_id, group_name=name, subgroup=None)
-    await show(cb, f"{E_CALENDAR} Группа {html.escape(name)}. Выберите подгруппу:", subgroup_keyboard())
+    await show(cb, f"{html_icon('calendar')} Группа {html.escape(name)}. Выберите подгруппу:", subgroup_keyboard())
     await cb.answer()
 
 
@@ -353,14 +342,6 @@ async def settings_action(cb: CallbackQuery) -> None:
 
 # ---------- фоновые рассылки ----------
 
-async def send(bot: Bot, chat_id: int, text: str) -> None:
-    try:
-        await bot.send_message(chat_id, text)
-    except Exception:
-        log.exception("send to %s failed", chat_id)
-    await asyncio.sleep(0.05)  # не упираться в лимиты Telegram на рассылку
-
-
 async def reminder_loop(bot: Bot) -> None:
     """За N минут до каждой пары — один раз."""
     sent: set[str] = set()
@@ -376,8 +357,9 @@ async def reminder_loop(bot: Bot) -> None:
                     if key in sent or not timedelta(0) <= pair.start - now <= lead:
                         continue
                     sent.add(key)
-                    await send(bot, user.chat_id,
-                               f"{E_BELL} Через {user.remind_minutes} мин: {fmt_pair(pair)}")
+                    await deliver(bot, user.chat_id,
+                                  [paragraph(icon("bell"), f" Через {user.remind_minutes} мин: ", *pair_text(pair))])
+                    await asyncio.sleep(0.05)  # не упираться в лимиты Telegram на рассылку
             if len(sent) > 5000:
                 sent.clear()
         except Exception:
@@ -396,7 +378,9 @@ async def digest_loop(bot: Bot) -> None:
                     continue
                 store.update(user.chat_id, last_digest=today_)
                 pairs = await day_pairs(user, now.date())
-                await send(bot, user.chat_id, f"{E_SUN} Доброе утро!\n\n{day_block(now.date(), pairs)}")
+                await deliver(bot, user.chat_id,
+                              [heading([icon("sun"), " Доброе утро!"], 2), *day_blocks(now.date(), pairs)])
+                await asyncio.sleep(0.05)
         except Exception:
             log.exception("digest failed")
         await asyncio.sleep(60)
@@ -425,10 +409,11 @@ async def dayend_loop(bot: Bot) -> None:
                 upcoming = [pair for pair in visible(await pairs_for(user.group_id), user.subgroup)
                             if pair.start > now]
                 if upcoming and upcoming[0].start - now >= VACATION_GAP:
-                    text = f"🤙 {line(VACATION_LINES, now.date())}"
+                    blocks = [paragraph("🤙 ", line(VACATION_LINES, now.date()))]
                 else:
-                    text = line(DAY_DONE_LINES, now.date())
-                await send(bot, user.chat_id, text)
+                    blocks = [paragraph(icon("done"), " ", line(DAY_DONE_LINES, now.date()))]
+                await deliver(bot, user.chat_id, blocks)
+                await asyncio.sleep(0.05)
             sent = {key for key in sent if key.endswith(now.date().isoformat())}
         except Exception:
             log.exception("day end check failed")
