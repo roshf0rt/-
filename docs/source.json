@@ -11,11 +11,11 @@
       "subtitle": "Пары, виджеты, общее ДЗ",
       "localizedDescription": "Расписание УрФУ по группе и подгруппе: виджеты на главном и заблокированном экране, живая карточка пары, заметки и общее домашнее задание.",
       "iconURL": "https://raw.githubusercontent.com/roshf0rt/-/claude/urfu-schedule-widgets/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
-      "version": "1.3",
-      "buildVersion": "4",
+      "version": "1.4",
+      "buildVersion": "5",
       "versionDate": "2026-10-30",
       "downloadURL": "https://raw.githubusercontent.com/roshf0rt/-/claude/urfu-schedule-widgets/docs/UrFUSchedule-unsigned.ipa",
-      "size": 1169801,
+      "size": 1177413,
       "minOSVersion": "17.0"
     }
   ]
