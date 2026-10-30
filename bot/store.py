@@ -15,6 +15,7 @@ class User:
     remind_minutes: int
     digest: bool
     dayend: bool
+    after_pair: bool
     last_digest: str | None
 
 
@@ -34,12 +35,17 @@ class Store:
                 last_digest TEXT
             )"""
         )
+        # Колонку добавили позже: в старой базе её нет.
+        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(users)")}
+        if "after_pair" not in columns:
+            self.db.execute("ALTER TABLE users ADD COLUMN after_pair INTEGER NOT NULL DEFAULT 0")
         self.db.commit()
 
     @staticmethod
     def _user(row: sqlite3.Row) -> User:
         return User(row["chat_id"], row["group_id"], row["group_name"], row["subgroup"],
-                    row["remind_minutes"], bool(row["digest"]), bool(row["dayend"]), row["last_digest"])
+                    row["remind_minutes"], bool(row["digest"]), bool(row["dayend"]),
+                    bool(row["after_pair"]), row["last_digest"])
 
     def get(self, chat_id: int) -> User | None:
         row = self.db.execute("SELECT * FROM users WHERE chat_id = ?", (chat_id,)).fetchone()

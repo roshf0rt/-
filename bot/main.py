@@ -11,13 +11,15 @@ import html
 import logging
 import os
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
-from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message)
+from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message,
+                           URLInputFile)
 
 import rich
 import urfu
@@ -45,6 +47,25 @@ VACATION_LINES = [
     "Каникулы — это не миф, это вы 😎",
 ]
 VACATION_GAP = timedelta(days=10)
+
+# Весёлые фразы: выбираются по дню, чтобы не повторялись каждый день.
+MORNING_LINES = [
+    "Доброе утро, котята! ☕",
+    "Котята, подъём! Пары ждут 🐾",
+    "Утро-утро, кофе и вперёд ☀️",
+    "Доброе утро, мои пушистые студенты 🐱",
+]
+CHILL_LINES = [
+    "Сегодня пар нет, чилл на расслабоне 😎",
+    "Пар нет. Котята отдыхают 🛋️",
+    "Сегодня без пар, расслабон включён 🌴",
+]
+# Подписи к картинкам с котами (cataas.com). Короткие, чтобы влезли на картинку.
+MORNING_MEMES = ["Доброе утро котята", "Котята подъем", "Утро кофе пары"]
+CHILL_MEMES = ["Пар нет", "Чилл на расслабоне", "Котята отдыхают"]
+DONE_MEMES = ["Пары кончились", "Газ домой котята", "Свободны котята"]
+VACATION_MEMES = ["Каникулы котята", "Котята на каникулах"]
+CAT_API = "https://cataas.com/cat/says/{text}?fontSize=60&fontColor=white"
 
 WELCOME = [
     paragraph(icon("bot"), " ", bold("Привет!"), " Я присылаю расписание группы УрФУ."),
@@ -98,7 +119,7 @@ def pair_text(pair: Pair) -> list:
 def day_blocks(day: date, pairs: list[Pair]) -> list[dict]:
     title = heading([icon("calendar"), f" {day:%d.%m} {WEEKDAYS[day.weekday()]}"], 3)
     if not pairs:
-        return [title, paragraph(icon("empty"), " Пар нет")]
+        return [title, paragraph(icon("empty"), " ", line(CHILL_LINES, day))]
     return [title, *(paragraph(icon("clock"), " ", *pair_text(pair)) for pair in pairs)]
 
 
@@ -122,13 +143,15 @@ def settings_view(user: User) -> tuple[str, InlineKeyboardMarkup]:
     remind = f"Напоминать за {user.remind_minutes} мин" if user.remind_minutes else "Напоминания выкл"
     digest = "вкл" if user.digest else "выкл"
     dayend = "вкл" if user.dayend else "выкл"
-    text = (f"{html_icon('bot')} <b>Настройки</b>\n"
+    after = "вкл" if user.after_pair else "выкл"
+    text =(f"{html_icon('bot')} <b>Настройки</b>\n"
             f"Группа: {html.escape(user.group_name or '—')}\n"
             f"Подгруппа: {subgroup_label(user.subgroup)}")
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=remind, callback_data="st:remind")],
         [InlineKeyboardButton(text=f"Утренняя сводка: {digest}", callback_data="st:digest")],
         [InlineKeyboardButton(text=f"Пары кончились: {dayend}", callback_data="st:dayend")],
+        [InlineKeyboardButton(text=f"После пары — что дальше: {after}", callback_data="st:after")],
         [InlineKeyboardButton(text="Сменить подгруппу", callback_data="st:sub")],
         [InlineKeyboardButton(text="Удалить мои данные", callback_data="st:delete")],
     ])
@@ -326,6 +349,8 @@ async def settings_action(cb: CallbackQuery) -> None:
         store.update(chat_id, digest=int(not user.digest))
     elif action == "dayend":
         store.update(chat_id, dayend=int(not user.dayend))
+    elif action == "after":
+        store.update(chat_id, after_pair=int(not user.after_pair))
     elif action == "sub":
         await show(cb, "Выберите подгруппу:", subgroup_keyboard())
         await cb.answer()
@@ -378,45 +403,72 @@ async def digest_loop(bot: Bot) -> None:
                     continue
                 store.update(user.chat_id, last_digest=today_)
                 pairs = await day_pairs(user, now.date())
+                await send_cat(bot, user.chat_id, line(MORNING_MEMES if pairs else CHILL_MEMES, now.date()))
                 await deliver(bot, user.chat_id,
-                              [heading([icon("sun"), " Доброе утро!"], 2), *day_blocks(now.date(), pairs)])
+                              [heading([line(MORNING_LINES, now.date())], 2), *day_blocks(now.date(), pairs)])
                 await asyncio.sleep(0.05)
         except Exception:
             log.exception("digest failed")
         await asyncio.sleep(60)
 
 
-async def dayend_loop(bot: Bot) -> None:
-    """Сразу после последней пары дня — весёлая фраза или сообщение про каникулы."""
+async def send_cat(bot: Bot, chat_id: int, text: str) -> None:
+    """Картинка с котом и подписью. Если сервис не ответил, просто пропускаем картинку."""
+    try:
+        await bot.send_photo(chat_id, URLInputFile(CAT_API.format(text=quote(text)), filename="cat.jpg"))
+    except Exception:
+        log.exception("cat picture failed")
+
+
+def after_pair_blocks(now: datetime, nxt: Pair) -> list[dict]:
+    minutes = int((nxt.start - now).total_seconds() // 60)
+    when = f"Через {minutes} мин." if minutes > 0 else "Уже начинается."
+    return [
+        paragraph(icon("next"), " Пара закончилась. Дальше: ", *pair_text(nxt)),
+        paragraph(f"{when} Успеете перекусить? ☕"),
+    ]
+
+
+async def send_day_end(bot: Bot, user: User, now: datetime) -> None:
+    upcoming = [pair for pair in visible(await pairs_for(user.group_id), user.subgroup) if pair.start > now]
+    if upcoming and upcoming[0].start - now >= VACATION_GAP:
+        await send_cat(bot, user.chat_id, line(VACATION_MEMES, now.date()))
+        blocks = [paragraph("🤙 ", line(VACATION_LINES, now.date()))]
+    else:
+        await send_cat(bot, user.chat_id, line(DONE_MEMES, now.date()))
+        blocks = [paragraph(icon("done"), " ", line(DAY_DONE_LINES, now.date()))]
+    await deliver(bot, user.chat_id, blocks)
+    await asyncio.sleep(0.05)
+
+
+async def pair_end_loop(bot: Bot) -> None:
+    """Через несколько минут после каждой пары: что дальше, а после последней — конец дня."""
     sent: set[str] = set()
     while True:
         try:
             now = datetime.now(TZ)
             for user in store.with_group():
-                if not user.dayend:
+                if not (user.after_pair or user.dayend):
                     continue
                 pairs = await day_pairs(user, now.date())
-                if not pairs:
-                    continue
-                last_end = max(pair.end for pair in pairs)
-                # Только в первые 10 минут после конца: после перезапуска старые сообщения не шлём.
-                if not timedelta(0) <= now - last_end <= timedelta(minutes=10):
-                    continue
-                key = f"{user.chat_id}:{now.date().isoformat()}"
-                if key in sent:
-                    continue
-                sent.add(key)
-                upcoming = [pair for pair in visible(await pairs_for(user.group_id), user.subgroup)
-                            if pair.start > now]
-                if upcoming and upcoming[0].start - now >= VACATION_GAP:
-                    blocks = [paragraph("🤙 ", line(VACATION_LINES, now.date()))]
-                else:
-                    blocks = [paragraph(icon("done"), " ", line(DAY_DONE_LINES, now.date()))]
-                await deliver(bot, user.chat_id, blocks)
-                await asyncio.sleep(0.05)
-            sent = {key for key in sent if key.endswith(now.date().isoformat())}
+                for pair in pairs:
+                    # Только в первые 10 минут после конца: после перезапуска старые сообщения не шлём.
+                    if not timedelta(0) <= now - pair.end <= timedelta(minutes=10):
+                        continue
+                    key = f"{user.chat_id}:{pair.end.isoformat()}"
+                    if key in sent:
+                        continue
+                    sent.add(key)
+                    following = [other for other in pairs if other.start >= pair.end]
+                    if following:
+                        if user.after_pair:
+                            await deliver(bot, user.chat_id, after_pair_blocks(now, following[0]))
+                            await asyncio.sleep(0.05)
+                    elif user.dayend:
+                        await send_day_end(bot, user, now)
+            sent = {key for key in sent if now.date().isoformat() in key}
         except Exception:
-            log.exception("day end check failed")
+            log.exception("pair end check failed")
         await asyncio.sleep(60)
 
 
@@ -432,7 +484,7 @@ async def main() -> None:
         BotCommand(command="settings", description="Настройки"),
         BotCommand(command="delete", description="Удалить мои данные"),
     ])
-    tasks = [asyncio.create_task(loop(bot)) for loop in (reminder_loop, digest_loop, dayend_loop)]
+    tasks = [asyncio.create_task(loop(bot)) for loop in (reminder_loop, digest_loop, pair_end_loop)]
     try:
         await dp.start_polling(bot)
     finally:
