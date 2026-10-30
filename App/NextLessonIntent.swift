@@ -15,19 +15,18 @@ struct NextLessonIntent: AppIntent {
 
 /// Фразы для Siri. Название приложения обязательно: Siri привязывает фразу к приложению.
 struct UrFUShortcuts: AppShortcutsProvider {
+    @AppShortcutsBuilder
     static var appShortcuts: [AppShortcut] {
-        [
-            AppShortcut(
-                intent: NextLessonIntent(),
-                phrases: [
-                    "Какая следующая пара в \(.applicationName)",
-                    "Следующая пара в \(.applicationName)",
-                    "Когда следующая пара в \(.applicationName)",
-                ],
-                shortTitle: "Следующая пара",
-                systemImageName: "calendar.badge.clock"
-            ),
-        ]
+        AppShortcut(
+            intent: NextLessonIntent(),
+            phrases: [
+                "Какая следующая пара в \(.applicationName)",
+                "Следующая пара в \(.applicationName)",
+                "Когда следующая пара в \(.applicationName)",
+            ],
+            shortTitle: "Следующая пара",
+            systemImageName: "calendar.badge.clock"
+        )
     }
 }
 
