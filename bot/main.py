@@ -62,7 +62,6 @@ CHILL_LINES = [
 ]
 # Подписи к картинкам с котами (cataas.com). Короткие, чтобы влезли на картинку.
 MORNING_MEMES = ["Доброе утро котята", "Котята подъем", "Утро кофе пары"]
-CHILL_MEMES = ["Пар нет", "Чилл на расслабоне", "Котята отдыхают"]
 DONE_MEMES = ["Пары кончились", "Газ домой котята", "Свободны котята"]
 VACATION_MEMES = ["Каникулы котята", "Котята на каникулах"]
 CAT_API = "https://cataas.com/cat/says/{text}?fontSize=60&fontColor=white"
@@ -403,7 +402,9 @@ async def digest_loop(bot: Bot) -> None:
                     continue
                 store.update(user.chat_id, last_digest=today_)
                 pairs = await day_pairs(user, now.date())
-                await send_cat(bot, user.chat_id, line(MORNING_MEMES if pairs else CHILL_MEMES, now.date()))
+                if not pairs:
+                    continue  # Пар нет — никого не будим.
+                await send_cat(bot, user.chat_id, line(MORNING_MEMES, now.date()))
                 await deliver(bot, user.chat_id,
                               [heading([line(MORNING_LINES, now.date())], 2), *day_blocks(now.date(), pairs)])
                 await asyncio.sleep(0.05)
