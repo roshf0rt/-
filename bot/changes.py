@@ -38,6 +38,19 @@ def pairs_from_json(text: str) -> list[Pair]:
                  item["kind"], item["room"], item["subgroup"], item["id"]) for item in json.loads(text)]
 
 
+def is_plausible(old: list[Pair], new: list[Pair], now: datetime) -> bool:
+    """Похоже ли новое расписание на настоящее, а не на сбой сайта.
+
+    Пустой ответ при непустом старом и резкая потеря пар считаются подозрительными:
+    такое изменение принимаем только после повторной проверки.
+    """
+    before = sum(1 for pair in old if pair.end > now)
+    after = sum(1 for pair in new if pair.end > now)
+    if before and not after:
+        return False
+    return before - after <= 3 or after * 10 >= before * 7
+
+
 def _details(pair: Pair) -> tuple:
     return (pair.start, pair.end, pair.room, pair.title)
 

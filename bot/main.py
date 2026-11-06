@@ -516,8 +516,8 @@ def change_blocks(found: list[Change], today: date) -> list[dict]:
     return blocks
 
 
-# Изменение считается настоящим, если одно и то же новое расписание видно в двух проверках подряд:
-# так сбой сайта, из-за которого список пар на минуту пустеет, не превращается в «все пары отменены».
+# Обычное изменение сообщаем сразу. Подозрительное (расписание резко опустело) считаем настоящим,
+# только если оно видно в двух проверках подряд: так сбой сайта не превращается в «все пары отменены».
 CHANGE_CHECK_SECONDS = 300
 CONFIRM_GAP = timedelta(minutes=3)
 _pending: dict[str, tuple[str, datetime]] = {}
@@ -542,12 +542,14 @@ async def check_changes(bot: Bot) -> None:
         if signature == changes.signature(old):
             _pending.pop(group_id, None)
             continue
-        seen = _pending.get(group_id)
-        if seen is None or seen[0] != signature:
-            _pending[group_id] = (signature, now)
-            continue
-        if now - seen[1] < CONFIRM_GAP:
-            continue
+        if not changes.is_plausible(old, new, now):
+            # Подозрительная потеря пар (сбой сайта?): ждём второго такого же ответа.
+            seen = _pending.get(group_id)
+            if seen is None or seen[0] != signature:
+                _pending[group_id] = (signature, now)
+                continue
+            if now - seen[1] < CONFIRM_GAP:
+                continue
         _pending.pop(group_id, None)
         store.save_snapshot(group_id, changes.pairs_to_json(new), now.isoformat())
         _cache.pop(group_id, None)  # следующий запрос пользователя возьмёт свежее расписание
