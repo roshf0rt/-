@@ -14,6 +14,8 @@ enum LiveActivities {
     private static let islandKey = "liveActivityInIsland"
     /// A card is started only for a pair that begins within this time.
     private static let startWindow: TimeInterval = 6 * 60 * 60
+    /// How often the app asks iOS for a background check of the schedule (cancellations, moves).
+    private static let checkInterval: TimeInterval = 30 * 60
 
     static var enabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
@@ -31,6 +33,7 @@ enum LiveActivities {
         let running = Activity<LessonActivityAttributes>.activities
         guard enabled, let state = state(lessons: lessons, theme: theme, now: now) else {
             for activity in running { await activity.end(nil, dismissalPolicy: .immediate) }
+            scheduleRefresh(at: now.addingTimeInterval(checkInterval))
             return
         }
         let content = ActivityContent(state: state, staleDate: boundary(after: now, in: state), relevanceScore: 100)
@@ -52,14 +55,26 @@ enum LiveActivities {
                 print("Live Activity: \(error)")
             }
         }
-        // Move on to the next pair when this one ends, if iOS grants the app the time.
-        scheduleRefresh(at: state.endsAt)
+        // Move on to the next pair when this one ends, but look at the schedule at least every half hour.
+        scheduleRefresh(at: min(state.endsAt, now.addingTimeInterval(checkInterval)))
     }
 
     /// Called from a background refresh: move the card on to the next pair or remove it.
     static func backgroundRefresh() async {
-        guard let group = ScheduleStore.loadGroup(), let snapshot = ScheduleStore.snapshot(for: group.id) else { return }
+        guard let group = ScheduleStore.loadGroup() else { return }
+        // Fresh schedule: this is how a cancelled or moved pair is noticed while the app is closed.
+        if let lessons = try? await ScheduleAPI(timeout: 15).fetchSchedule(for: group) {
+            ScheduleStore.save(ScheduleSnapshot(group: group, lessons: lessons, updatedAt: .now))
+        }
+        await ScheduleChangeLog.notifyPending()
+        guard let snapshot = ScheduleStore.snapshot(for: group.id) else {
+            scheduleRefresh(at: Date().addingTimeInterval(checkInterval))
+            return
+        }
         let lessons = snapshot.lessons.visible(forSubgroup: ScheduleStore.subgroup)
+        // Reminders are planned ahead: drop the ones for a pair that was cancelled.
+        await LessonReminders.reschedule(lessons, minutesBefore: LessonReminders.minutesBefore)
+        await LessonReminders.rescheduleMoods(lessons, enabled: LessonReminders.moodsEnabled)
         await sync(lessons: lessons, groupName: group.name, theme: AppTheme.stored, canStart: false)
     }
 

@@ -73,6 +73,7 @@ struct ScheduleProvider: TimelineProvider {
                 let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: now)
                 ScheduleStore.save(fresh)
                 snapshot = fresh
+                await ScheduleChangeLog.notifyPending()
                 WidgetLog.add("\(group.name): загружено пар \(lessons.count)")
             } catch {
                 WidgetLog.add("\(group.name): ошибка — \(error.localizedDescription)")

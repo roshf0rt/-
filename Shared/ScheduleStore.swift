@@ -114,5 +114,6 @@ enum ScheduleStore {
     static func save(_ snapshot: ScheduleSnapshot) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: snapshotKey(snapshot.group.id))
+        ScheduleChangeLog.observe(snapshot)
     }
 }

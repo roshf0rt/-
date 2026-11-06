@@ -22,6 +22,14 @@ final class ScheduleViewModel: ObservableObject {
         }
     }
     @Published private(set) var notificationsDenied = false
+    /// Отмены, переносы и добавленные пары, о которых пользователь ещё не прочитал.
+    @Published private(set) var changes = ScheduleChangeLog.active()
+    @Published var changeNotifications = ScheduleChangeLog.enabled {
+        didSet {
+            ScheduleChangeLog.enabled = changeNotifications
+            if changeNotifications { Task { _ = await LessonReminders.requestAuthorization() } }
+        }
+    }
     /// Сообщение, когда пары закончились, и о каникулах.
     @Published var moodNotifications = LessonReminders.moodsEnabled {
         didSet {
@@ -99,6 +107,11 @@ final class ScheduleViewModel: ObservableObject {
 
     var lessons: [Lesson] { (snapshot?.lessons ?? []).visible(forSubgroup: subgroup) }
 
+    func dismissChanges() {
+        ScheduleChangeLog.dismiss()
+        changes = []
+    }
+
     var hasSubgroups: Bool { snapshot?.lessons.contains { $0.subgroup != nil } ?? false }
 
     func select(_ group: ScheduleGroup) async {
@@ -115,6 +128,8 @@ final class ScheduleViewModel: ObservableObject {
         refreshID = requestID
         loading = true
         error = nil
+        // Изменения мог записать виджет, пока приложение было закрыто.
+        changes = ScheduleChangeLog.active()
         defer { if refreshID == requestID { loading = false } }
         do {
             // A separate task, so the request survives when SwiftUI cancels the calling task
@@ -126,6 +141,12 @@ final class ScheduleViewModel: ObservableObject {
             let fresh = ScheduleSnapshot(group: group, lessons: lessons, updatedAt: Date())
             snapshot = fresh
             ScheduleStore.save(fresh)
+            changes = ScheduleChangeLog.active()
+            Task {
+                // Разрешение на уведомления спрашиваем один раз, когда оно ещё не выбрано.
+                if ScheduleChangeLog.enabled { _ = await LessonReminders.requestAuthorization() }
+                await ScheduleChangeLog.notifyPending()
+            }
             WidgetCenter.shared.reloadAllTimelines()
             updateReminders()
             syncCompanions()
@@ -249,6 +270,8 @@ private struct ScheduleList: View {
                 let days = Dictionary(grouping: upcoming) { Calendar.current.startOfDay(for: $0.startsAt) }
 
                 VStack(alignment: .leading, spacing: 12) {
+                    ChangesCard(changes: model.changes, now: now) { model.dismissChanges() }
+
                     WelcomeCard()
 
                     if let error = model.error {
