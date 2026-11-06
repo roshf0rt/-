@@ -16,6 +16,7 @@ class User:
     digest: bool
     dayend: bool
     after_pair: bool
+    changes: bool
     last_digest: str | None
 
 
@@ -39,13 +40,23 @@ class Store:
         columns = {row["name"] for row in self.db.execute("PRAGMA table_info(users)")}
         if "after_pair" not in columns:
             self.db.execute("ALTER TABLE users ADD COLUMN after_pair INTEGER NOT NULL DEFAULT 0")
+        if "changes" not in columns:
+            self.db.execute("ALTER TABLE users ADD COLUMN changes INTEGER NOT NULL DEFAULT 1")
+        # Последнее подтверждённое расписание группы: с ним сравниваем новое, чтобы заметить отмену пары.
+        self.db.execute(
+            """CREATE TABLE IF NOT EXISTS snapshots (
+                group_id TEXT PRIMARY KEY,
+                pairs TEXT NOT NULL,
+                taken_at TEXT NOT NULL
+            )"""
+        )
         self.db.commit()
 
     @staticmethod
     def _user(row: sqlite3.Row) -> User:
         return User(row["chat_id"], row["group_id"], row["group_name"], row["subgroup"],
                     row["remind_minutes"], bool(row["digest"]), bool(row["dayend"]),
-                    bool(row["after_pair"]), row["last_digest"])
+                    bool(row["after_pair"]), bool(row["changes"]), row["last_digest"])
 
     def get(self, chat_id: int) -> User | None:
         row = self.db.execute("SELECT * FROM users WHERE chat_id = ?", (chat_id,)).fetchone()
@@ -68,3 +79,12 @@ class Store:
     def with_group(self) -> list[User]:
         rows = self.db.execute("SELECT * FROM users WHERE group_id IS NOT NULL").fetchall()
         return [self._user(row) for row in rows]
+
+    def get_snapshot(self, group_id: str) -> tuple[str, str] | None:
+        row = self.db.execute("SELECT pairs, taken_at FROM snapshots WHERE group_id = ?", (group_id,)).fetchone()
+        return (row["pairs"], row["taken_at"]) if row else None
+
+    def save_snapshot(self, group_id: str, pairs: str, taken_at: str) -> None:
+        self.db.execute("INSERT OR REPLACE INTO snapshots (group_id, pairs, taken_at) VALUES (?, ?, ?)",
+                        (group_id, pairs, taken_at))
+        self.db.commit()

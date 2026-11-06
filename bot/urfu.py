@@ -36,6 +36,7 @@ class Pair:
     kind: str
     room: str
     subgroup: int | None
+    id: str
 
 
 async def _get_json(url: str, params: dict | None = None):
@@ -102,6 +103,9 @@ def parse_pairs(events: list[dict]) -> list[Pair]:
         placeholder = (event.get("pairNumber") or 0) == 0 and start is not None and start.hour == 0 and start.minute == 0
         if start is None or end is None or placeholder:
             continue
-        pairs.append(Pair(start, end, event.get("title", "Без названия"), event.get("loadType", ""),
-                          event.get("auditoryTitle") or "", subgroup_of(event)))
+        title = event.get("title", "Без названия")
+        # Идентификатор события нужен, чтобы заметить отмену или перенос пары.
+        event_id = str(event.get("id") or f"{day}-{event.get('timeBegin', '')}-{title}")
+        pairs.append(Pair(start, end, title, event.get("loadType", ""),
+                          event.get("auditoryTitle") or "", subgroup_of(event), event_id))
     return sorted(pairs, key=lambda pair: pair.start)

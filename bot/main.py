@@ -21,8 +21,10 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message,
                            URLInputFile)
 
+import changes
 import rich
 import urfu
+from changes import Change
 from rich import bold, code, heading, icon, paragraph
 from store import REMIND_CHOICES, Store, User
 from urfu import TZ, Pair
@@ -143,6 +145,7 @@ def settings_view(user: User) -> tuple[str, InlineKeyboardMarkup]:
     digest = "вкл" if user.digest else "выкл"
     dayend = "вкл" if user.dayend else "выкл"
     after = "вкл" if user.after_pair else "выкл"
+    notify = "вкл" if user.changes else "выкл"
     text =(f"{html_icon('bot')} <b>Настройки</b>\n"
             f"Группа: {html.escape(user.group_name or '—')}\n"
             f"Подгруппа: {subgroup_label(user.subgroup)}")
@@ -151,6 +154,7 @@ def settings_view(user: User) -> tuple[str, InlineKeyboardMarkup]:
         [InlineKeyboardButton(text=f"Утренняя сводка: {digest}", callback_data="st:digest")],
         [InlineKeyboardButton(text=f"Пары кончились: {dayend}", callback_data="st:dayend")],
         [InlineKeyboardButton(text=f"После пары — что дальше: {after}", callback_data="st:after")],
+        [InlineKeyboardButton(text=f"Отмены и переносы пар: {notify}", callback_data="st:changes")],
         [InlineKeyboardButton(text="Сменить подгруппу", callback_data="st:sub")],
         [InlineKeyboardButton(text="Удалить мои данные", callback_data="st:delete")],
     ])
@@ -350,6 +354,8 @@ async def settings_action(cb: CallbackQuery) -> None:
         store.update(chat_id, dayend=int(not user.dayend))
     elif action == "after":
         store.update(chat_id, after_pair=int(not user.after_pair))
+    elif action == "changes":
+        store.update(chat_id, changes=int(not user.changes))
     elif action == "sub":
         await show(cb, "Выберите подгруппу:", subgroup_keyboard())
         await cb.answer()
@@ -473,6 +479,97 @@ async def pair_end_loop(bot: Bot) -> None:
         await asyncio.sleep(60)
 
 
+def day_label(day: date, today: date) -> str:
+    if day == today:
+        return "сегодня"
+    if day == today + timedelta(days=1):
+        return "завтра"
+    return f"{day:%d.%m} {WEEKDAYS[day.weekday()]}"
+
+
+def when_text(pair: Pair, today: date) -> str:
+    return f"{day_label(pair.start.date(), today)} в {pair.start:%H:%M}"
+
+
+def change_blocks(found: list[Change], today: date) -> list[dict]:
+    """Сообщение об отменах, добавлениях и переносах: не больше десяти строк."""
+    blocks = [heading([icon("warn"), " Расписание изменилось"], 2)]
+    for change in found[:10]:
+        pair = change.pair
+        place = f", кабинет {pair.room}" if pair.room else ""
+        if change.kind == "cancelled":
+            blocks.append(paragraph("❌ ", bold("Отменена: "), f"{pair.title}, {when_text(pair, today)}{place}"))
+        elif change.kind == "added":
+            blocks.append(paragraph("➕ ", bold("Добавлена: "), f"{pair.title}, {when_text(pair, today)}{place}"))
+        else:
+            before = change.previous or pair
+            details = []
+            if (before.start, before.end) != (pair.start, pair.end):
+                details.append(f"было {when_text(before, today)}, стало {when_text(pair, today)}")
+            if before.room != pair.room:
+                details.append(f"кабинет {before.room or '—'} → {pair.room or '—'}")
+            if before.title != pair.title:
+                details.append(f"название: {before.title} → {pair.title}")
+            blocks.append(paragraph("🔄 ", bold("Изменена: "), f"{pair.title} — " + "; ".join(details)))
+    if len(found) > 10:
+        blocks.append(paragraph(f"И ещё {len(found) - 10}."))
+    return blocks
+
+
+# Изменение считается настоящим, если одно и то же новое расписание видно в двух проверках подряд:
+# так сбой сайта, из-за которого список пар на минуту пустеет, не превращается в «все пары отменены».
+CHANGE_CHECK_SECONDS = 300
+CONFIRM_GAP = timedelta(minutes=3)
+_pending: dict[str, tuple[str, datetime]] = {}
+
+
+async def check_changes(bot: Bot) -> None:
+    now = datetime.now(TZ)
+    users = store.with_group()
+    for group_id in {user.group_id for user in users}:
+        try:
+            new = await urfu.fetch_pairs(group_id, now.date())
+        except Exception:
+            log.exception("schedule check for %s failed", group_id)
+            continue
+        saved = store.get_snapshot(group_id)
+        if saved is None:
+            store.save_snapshot(group_id, changes.pairs_to_json(new), now.isoformat())
+            continue
+        old = changes.pairs_from_json(saved[0])
+        taken_at = datetime.fromisoformat(saved[1])
+        signature = changes.signature(new)
+        if signature == changes.signature(old):
+            _pending.pop(group_id, None)
+            continue
+        seen = _pending.get(group_id)
+        if seen is None or seen[0] != signature:
+            _pending[group_id] = (signature, now)
+            continue
+        if now - seen[1] < CONFIRM_GAP:
+            continue
+        _pending.pop(group_id, None)
+        store.save_snapshot(group_id, changes.pairs_to_json(new), now.isoformat())
+        _cache.pop(group_id, None)  # следующий запрос пользователя возьмёт свежее расписание
+        for user in users:
+            if user.group_id != group_id or not user.changes:
+                continue
+            found = changes.diff(visible(old, user.subgroup), visible(new, user.subgroup), now, taken_at)
+            if found:
+                await deliver(bot, user.chat_id, change_blocks(found, now.date()))
+                await asyncio.sleep(0.05)
+
+
+async def changes_loop(bot: Bot) -> None:
+    """Раз в несколько минут сравнивает расписание с сохранённым и пишет об отменах и переносах."""
+    while True:
+        try:
+            await check_changes(bot)
+        except Exception:
+            log.exception("changes check failed")
+        await asyncio.sleep(CHANGE_CHECK_SECONDS)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -485,7 +582,7 @@ async def main() -> None:
         BotCommand(command="settings", description="Настройки"),
         BotCommand(command="delete", description="Удалить мои данные"),
     ])
-    tasks = [asyncio.create_task(loop(bot)) for loop in (reminder_loop, digest_loop, pair_end_loop)]
+    tasks = [asyncio.create_task(loop(bot)) for loop in (reminder_loop, digest_loop, pair_end_loop, changes_loop)]
     try:
         await dp.start_polling(bot)
     finally:
